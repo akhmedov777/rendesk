@@ -1,0 +1,26 @@
+{
+  "releases": [
+    {
+      "tag": "v1.0.0-beta.2",
+      "highlights": [
+        {
+          "source": "desktop",
+          "items": [
+            {
+              "title": "Installable beta builds",
+              "description": "Rendesk now ships macOS and Windows installers from GitHub Releases."
+            },
+            {
+              "title": "Saved provider keys",
+              "description": "Provider API keys entered in the app now persist across restarts."
+            },
+            {
+              "title": "Rendesk branding",
+              "description": "Desktop packaging, app metadata, and installer visuals now use the Rendesk name."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

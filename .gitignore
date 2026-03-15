@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+target/
+*.tsbuildinfo
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Tauri
+packages/desktop/src-tauri/target/
+packages/desktop/src-tauri/sidecars/
+packages/desktop/src-tauri/gen/
+
+# Bun
+bun.lockb
+
+# Turbo
+.turbo/
+
+# Debug
+*.log
+npm-debug.log*

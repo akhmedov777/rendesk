@@ -1,0 +1,27 @@
+#!/bin/sh
+set -e
+
+BINARY=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --binary)
+      BINARY="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
+if [ -z "$BINARY" ]; then
+  echo "Usage: install --binary <path>" >&2
+  exit 1
+fi
+
+INSTALL_DIR="$HOME/.local/bin"
+mkdir -p "$INSTALL_DIR"
+cp "$BINARY" "$INSTALL_DIR/opencode"
+chmod +x "$INSTALL_DIR/opencode"
+echo "Installed opencode to $INSTALL_DIR/opencode"

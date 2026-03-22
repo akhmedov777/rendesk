@@ -9,16 +9,15 @@ import {
   ServerConnection,
   useCommand,
 } from "@rendesk/app"
-import { Splash } from "@rendesk/ui/logo"
 import { createResource, onCleanup, onMount, Show } from "solid-js"
 import { render } from "solid-js/web"
 import pkg from "../package.json"
 import { DesktopFile } from "./components/desktop-file"
-import { SettingsDocumentEditor } from "./components/settings-document-editor"
 import { DesktopRouter } from "./desktop-router"
 import { DesktopEditorProvider, getDesktopActiveEditorState } from "./editor/provider"
 import { initI18n, t } from "./i18n"
 import type { BackofficeBridge, DesktopOs } from "./electron/bridge"
+import * as pyodideBridge from "./pyodide/bridge"
 import "./styles.css"
 
 const root = document.getElementById("root")
@@ -170,6 +169,7 @@ render(() => {
     }
     window.__RENDESK__ = runtimeFlags
     window.__OPENCODE__ = runtimeFlags
+
     return value
   })
 
@@ -194,14 +194,14 @@ render(() => {
       when={bootstrap()}
       fallback={
         <div class="h-screen w-screen flex flex-col items-center justify-center bg-background-base">
-          <Splash class="w-16 h-20 opacity-50 animate-pulse" />
+          <div class="size-8 rounded-full border-2 border-icon-weak border-t-icon-info-active animate-spin" />
         </div>
       }
     >
       {(value) => {
         const platform = createPlatform(value())
         const server: ServerConnection.Any = {
-          displayName: "Local back office",
+          displayName: "Workspace",
           type: "sidecar",
           variant: "base",
           http: {
@@ -219,21 +219,47 @@ render(() => {
           return null
         }
 
+        function PyodideBridge() {
+          onMount(() => {
+            const api = bridge()
+            if (!api.onPyodideExecute || !api.sendPyodideResult) return
+
+            const pyodideAssetsUrl = `${value().serviceUrl}/pyodide`
+            let initStarted = false
+
+            return api.onPyodideExecute(async (payload) => {
+              try {
+                // Lazy-initialize Pyodide on first request
+                if (!pyodideBridge.isReady() && !initStarted) {
+                  initStarted = true
+                  await pyodideBridge.initialize(pyodideAssetsUrl)
+                }
+
+                const result = await pyodideBridge.execute(payload.code, payload.globals)
+                await api.sendPyodideResult(payload.requestId, result).catch(() => undefined)
+              } catch (error) {
+                await api
+                  .sendPyodideResult(payload.requestId, {
+                    success: false,
+                    result: undefined,
+                    stdout: "",
+                    stderr: error instanceof Error ? error.message : String(error),
+                    images: [],
+                  })
+                  .catch(() => undefined)
+              }
+            })
+          })
+          return null
+        }
+
         return (
           <PlatformProvider value={platform}>
             <DesktopEditorProvider>
-              <AppBaseProviders
-                fileComponent={DesktopFile}
-                settingsTabs={[
-                  {
-                    value: "document-editor",
-                    label: "Document Editor",
-                    component: SettingsDocumentEditor,
-                  },
-                ]}
-              >
+              <AppBaseProviders fileComponent={DesktopFile}>
                 <AppInterface defaultServer={ServerConnection.key(server)} servers={[server]} router={DesktopRouter}>
                   <MenuBridge />
+                  <PyodideBridge />
                 </AppInterface>
               </AppBaseProviders>
             </DesktopEditorProvider>

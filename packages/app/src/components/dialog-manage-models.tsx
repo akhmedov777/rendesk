@@ -2,22 +2,14 @@ import { Dialog } from "@rendesk/ui/dialog"
 import { List } from "@rendesk/ui/list"
 import { Switch } from "@rendesk/ui/switch"
 import { Tooltip } from "@rendesk/ui/tooltip"
-import { Button } from "@rendesk/ui/button"
 import type { Component } from "solid-js"
 import { useLocal } from "@/context/local"
 import { popularProviders } from "@/hooks/use-providers"
 import { useLanguage } from "@/context/language"
-import { useDialog } from "@rendesk/ui/context/dialog"
-import { DialogSelectProvider } from "./dialog-select-provider"
 
 export const DialogManageModels: Component = () => {
   const local = useLocal()
   const language = useLanguage()
-  const dialog = useDialog()
-
-  const handleConnectProvider = () => {
-    dialog.show(() => <DialogSelectProvider />)
-  }
   const providerRank = (id: string) => popularProviders.indexOf(id)
   const providerList = (providerID: string) => local.model.list().filter((x) => x.provider.id === providerID)
   const providerVisible = (providerID: string) =>
@@ -29,15 +21,7 @@ export const DialogManageModels: Component = () => {
   }
 
   return (
-    <Dialog
-      title={language.t("dialog.model.manage")}
-      description={language.t("dialog.model.manage.description")}
-      action={
-        <Button class="h-7 -my-1 text-14-medium" icon="plus-small" tabIndex={-1} onClick={handleConnectProvider}>
-          {language.t("command.provider.connect")}
-        </Button>
-      }
-    >
+    <Dialog title={language.t("dialog.model.manage")} description={language.t("dialog.model.manage.description")}>
       <List
         search={{ placeholder: language.t("dialog.model.search.placeholder"), autofocus: true }}
         emptyMessage={language.t("dialog.model.empty")}

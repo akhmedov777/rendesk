@@ -60,7 +60,7 @@
     "typescript": "catalog:"
   },
   "dependencies": {
-    "@opencode-ai/sdk": "workspace:*"
+    "@rendesk/sdk": "workspace:*"
   },
   "repository": {
     "type": "git",

@@ -1219,7 +1219,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               onKeyDown={handleKeyDown}
               classList={{
                 "select-text": true,
-                "w-full pl-3 pr-2 pt-2 pb-11 text-14-regular text-text-strong focus:outline-none whitespace-pre-wrap": true,
+                "w-full pl-3 pr-2 pt-2 pb-9 text-14-regular text-text-strong focus:outline-none whitespace-pre-wrap": true,
                 "[&_[data-type=file]]:text-syntax-property": true,
                 "[&_[data-type=agent]]:text-syntax-type": true,
                 "font-mono!": store.mode === "shell",
@@ -1227,7 +1227,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             />
             <Show when={!prompt.dirty()}>
               <div
-                class="absolute top-0 inset-x-0 pl-3 pr-2 pt-2 pb-11 text-14-regular text-text-weak pointer-events-none whitespace-nowrap truncate"
+                class="absolute top-0 inset-x-0 pl-3 pr-2 pt-2 pb-9 text-14-regular text-text-weak pointer-events-none whitespace-nowrap truncate"
                 classList={{ "font-mono!": store.mode === "shell" }}
               >
                 {placeholder()}
@@ -1235,7 +1235,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             </Show>
           </div>
 
-          <div class="pointer-events-none absolute bottom-2 right-2 flex items-center gap-2">
+          <div class="pointer-events-none absolute bottom-1.5 right-1.5 flex items-center gap-1.5">
             <input
               ref={fileInputRef}
               type="file"
@@ -1264,7 +1264,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   data-action="prompt-attach"
                   type="button"
                   variant="ghost"
-                  class="size-8 p-0"
+                  class="size-7 p-0"
                   style={{
                     opacity: buttonsSpring(),
                     transform: `scale(${0.95 + buttonsSpring() * 0.05})`,
@@ -1275,7 +1275,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   tabIndex={store.mode === "normal" ? undefined : -1}
                   aria-label={language.t("prompt.action.attachFile")}
                 >
-                  <Icon name="plus" class="size-4.5" />
+                  <Icon name="plus" class="size-4" />
                 </Button>
               </TooltipKeybind>
 
@@ -1288,7 +1288,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   <Button
                     type="button"
                     variant="ghost"
-                    class="size-8 p-0"
+                    class="size-7 p-0"
                     style={{
                       opacity: buttonsSpring(),
                       transform: `scale(${0.95 + buttonsSpring() * 0.05})`,
@@ -1302,7 +1302,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   >
                     <Icon
                       name="window-cursor"
-                      class="size-4.5"
+                      class="size-4"
                       classList={{ "text-icon-info-active": hasCurrentEditorContext() }}
                     />
                   </Button>
@@ -1338,7 +1338,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   tabIndex={store.mode === "normal" ? undefined : -1}
                   icon={working() ? "stop" : "arrow-up"}
                   variant="primary"
-                  class="size-8"
+                  class="size-7"
                   style={{
                     opacity: buttonsSpring(),
                     transform: `scale(${0.95 + buttonsSpring() * 0.05})`,
@@ -1350,7 +1350,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             </div>
           </div>
 
-          <div class="pointer-events-none absolute bottom-2 left-2">
+          <div class="pointer-events-none absolute bottom-1.5 left-1.5">
             <div class="pointer-events-auto">
               <TooltipKeybind
                 placement="top"
@@ -1371,7 +1371,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     permission.toggleAutoAccept(params.id, sdk.directory)
                   }}
                   classList={{
-                    "size-6 flex items-center justify-center": true,
+                    "size-5 flex items-center justify-center": true,
                     "text-text-base": !accepting(),
                     "hover:bg-surface-success-base": accepting(),
                   }}
@@ -1394,8 +1394,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         </div>
       </DockShellForm>
       <DockTray attach="top">
-        <div class="px-1.75 pt-5.5 pb-2 flex items-center gap-2 min-w-0">
-          <div class="flex items-center gap-1.5 min-w-0 flex-1">
+        <div class="px-1.5 pt-4 pb-1.5 flex items-center gap-1.5 min-w-0">
+          <div class="flex items-center gap-1 min-w-0 flex-1">
             <TooltipKeybind
               placement="top"
               gutter={4}
@@ -1408,9 +1408,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 current={local.agent.current()?.name ?? ""}
                 onSelect={local.agent.set}
                 class="capitalize max-w-[160px]"
-                valueClass="truncate text-13-regular"
+                valueClass="truncate text-12-regular"
                 triggerStyle={{
-                  height: "28px",
+                  height: "24px",
                   opacity: buttonsSpring(),
                   transform: `scale(${0.95 + buttonsSpring() * 0.05})`,
                   filter: `blur(${(1 - buttonsSpring()) * 2}px)`,
@@ -1432,9 +1432,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     as="div"
                     variant="ghost"
                     size="normal"
-                    class="min-w-0 max-w-[320px] text-13-regular group"
+                    class="min-w-0 max-w-[320px] text-12-regular group"
                     style={{
-                      height: "28px",
+                      height: "24px",
                       opacity: buttonsSpring(),
                       transform: `scale(${0.95 + buttonsSpring() * 0.05})`,
                       filter: `blur(${(1 - buttonsSpring()) * 2}px)`,
@@ -1469,13 +1469,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     variant: "ghost",
                     size: "normal",
                     style: {
-                      height: "28px",
+                      height: "24px",
                       opacity: buttonsSpring(),
                       transform: `scale(${0.95 + buttonsSpring() * 0.05})`,
                       filter: `blur(${(1 - buttonsSpring()) * 2}px)`,
                       "pointer-events": buttonsSpring() > 0.5 ? "auto" : "none",
                     },
-                    class: "min-w-0 max-w-[320px] text-13-regular group",
+                    class: "min-w-0 max-w-[320px] text-12-regular group",
                   }}
                 >
                   <Show when={local.model.current()?.provider?.id}>
@@ -1503,9 +1503,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 label={(x) => (x === "default" ? language.t("common.default") : x)}
                 onSelect={(x) => local.model.variant.set(x === "default" ? undefined : x)}
                 class="capitalize max-w-[160px]"
-                valueClass="truncate text-13-regular"
+                valueClass="truncate text-12-regular"
                 triggerStyle={{
-                  height: "28px",
+                  height: "24px",
                   opacity: buttonsSpring(),
                   transform: `scale(${0.95 + buttonsSpring() * 0.05})`,
                   filter: `blur(${(1 - buttonsSpring()) * 2}px)`,

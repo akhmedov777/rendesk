@@ -189,6 +189,31 @@ describe("applyDirectoryEvent", () => {
     expect(store.sessionTotal).toBe(2)
   })
 
+  test("does not trim already visible sessions when an unknown session update arrives", () => {
+    const [store, setStore] = createStore(
+      baseState({
+        limit: 2,
+        session: [rootSession({ id: "a" }), rootSession({ id: "b" }), rootSession({ id: "c" })],
+      }),
+    )
+
+    applyDirectoryEvent({
+      event: {
+        type: "session.updated",
+        properties: {
+          info: rootSession({ id: "d" }),
+        },
+      },
+      store,
+      setStore,
+      push() {},
+      directory: "/tmp",
+      loadLsp() {},
+    })
+
+    expect(store.session.map((x) => x.id)).toEqual(["a", "b", "c", "d"])
+  })
+
   test("cleans session caches when archived", () => {
     const message = userMessage("msg_1", "ses_1")
     const [store, setStore] = createStore(

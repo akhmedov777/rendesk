@@ -20,6 +20,17 @@ bun run --cwd packages/desktop dev
 
 ## Build
 
+Set managed infrastructure env vars before building:
+
+```bash
+export ANTHROPIC_API_KEY="..."
+export ONLYOFFICE_DOCUMENT_SERVER_URL="https://docs.your-company.example"
+export ONLYOFFICE_JWT_SECRET="..."
+# optional
+export ONLYOFFICE_CALLBACK_BASE_URL=""
+export ONLYOFFICE_AUTO_TUNNEL_ENABLED="true"
+```
+
 ```bash
 bun run --cwd packages/desktop build
 ```
@@ -45,7 +56,10 @@ Tagged releases publish download assets to GitHub Releases:
 
 ## First Run
 
-Packaged builds no longer require a local `.env.local` file. Users connect Anthropic from the existing provider settings and the API key is stored under the desktop app's `userData` directory.
+Packaged builds run in managed mode:
+
+- Anthropic and OnlyOffice credentials are injected at build/package time by internal infrastructure.
+- End users cannot connect providers or enter API keys in the app.
 
 ## Unsigned Beta Install Notes
 

@@ -1,39 +1,38 @@
-import { createWriteStream, createReadStream, existsSync, statSync } from "node:fs"
+import { createReadStream, existsSync, statSync, readFileSync } from "node:fs"
 import { IncomingMessage, ServerResponse } from "node:http"
-import { basename, extname } from "node:path"
-import { buildOnlyOfficeConfig, isOnlyOfficeExtension, verifyEditorJwt } from "./config"
-import { probeCallbackEndpoint, probeDownloadEndpoint } from "./connectivity"
-import {
-  getDocumentServerHost,
-  isLocalDocumentServerHost,
-  isLoopbackHost,
-  resolveEditorBaseUrl,
-  tryParseUrl,
-} from "./base-url"
-import type { EditorIntegrationConfig } from "./types"
+import { basename, extname, join } from "node:path"
+import { isOnlyOfficeExtension } from "./config"
+import { convertToBinary, convertFromBinary } from "./converter"
 
-const MIME_MAP: Record<string, string> = {
-  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  ".doc": "application/msword",
-  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  ".xls": "application/vnd.ms-excel",
-  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  ".ppt": "application/vnd.ms-powerpoint",
-  ".pdf": "application/pdf",
-  ".odt": "application/vnd.oasis.opendocument.text",
-  ".ods": "application/vnd.oasis.opendocument.spreadsheet",
-  ".odp": "application/vnd.oasis.opendocument.presentation",
-  ".rtf": "application/rtf",
-  ".csv": "text/csv",
+const STATIC_MIME_MAP: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".htm": "text/html; charset=utf-8",
+  ".js": "application/javascript; charset=utf-8",
+  ".mjs": "application/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".svg": "image/svg+xml",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".ttf": "font/ttf",
+  ".otf": "font/otf",
+  ".eot": "application/vnd.ms-fontobject",
+  ".ico": "image/x-icon",
+  ".xml": "application/xml",
+  ".bin": "application/octet-stream",
+  ".wasm": "application/wasm",
 }
 
 export type EditorApiDeps = {
-  getConfig: () => EditorIntegrationConfig
-  getIngressPort: () => number | null
-  ensureTunnelReady: () => Promise<{ baseUrl?: string; error?: string }>
-  getTunnelState: () => unknown
-  reconnectTunnel: () => Promise<{ baseUrl?: string; error?: string }>
-  fetchExternal?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>
+  getResourcesPath: () => string
+  getConverterPath: () => string
+  getCachePath: () => string
+  getFontDataPath: () => string
+  getFontSelectionPath: () => string
 }
 
 function sendJson(response: ServerResponse, status: number, payload: unknown) {
@@ -46,104 +45,39 @@ function sendJson(response: ServerResponse, status: number, payload: unknown) {
   response.end(JSON.stringify(payload))
 }
 
-async function readJsonBody(request: IncomingMessage) {
-  let body = ""
+async function readRawBody(request: IncomingMessage): Promise<Buffer> {
+  const chunks: Buffer[] = []
   for await (const chunk of request) {
-    body += chunk.toString()
+    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk)
   }
-  if (!body.trim()) return {}
-  return JSON.parse(body) as Record<string, unknown>
+  return Buffer.concat(chunks)
 }
 
-function getTransportMode(config: EditorIntegrationConfig) {
-  const docHost = getDocumentServerHost(config.documentServerUrl)
-  const isRemoteDocumentServer = !isLocalDocumentServerHost(docHost)
-  const manualCallback = config.callbackBaseUrl.trim()
-  const mode = !isRemoteDocumentServer
-    ? "local"
-    : manualCallback
-      ? "manual"
-      : config.autoTunnelEnabled === false
-        ? "disabled"
-        : "auto"
+function getStaticMimeType(filePath: string): string {
+  return STATIC_MIME_MAP[extname(filePath).toLowerCase()] ?? "application/octet-stream"
+}
 
+// Suppress file-watcher reload after saves by tracking recent save times.
+const recentSaves = new Map<string, number>()
+const SAVE_GRACE_MS = 2000
+
+export function wasRecentlySaved(filePath: string): boolean {
+  const savedAt = recentSaves.get(filePath)
+  if (!savedAt) return false
+  if (Date.now() - savedAt > SAVE_GRACE_MS) {
+    recentSaves.delete(filePath)
+    return false
+  }
+  return true
+}
+
+export function createEditorApiHandlers(deps: EditorApiDeps) {
   return {
-    docHost,
-    isRemoteDocumentServer,
-    manualCallback,
-    mode,
-  }
-}
-
-function getMimeType(filePath: string) {
-  return MIME_MAP[extname(filePath).toLowerCase()] ?? "application/octet-stream"
-}
-
-type ByteRange = {
-  start: number
-  end: number
-}
-
-function parseByteRange(header: string | undefined, size: number): ByteRange | null {
-  if (!header) return null
-  const match = header.match(/^bytes=(\d*)-(\d*)$/i)
-  if (!match) return null
-
-  const [, rawStart, rawEnd] = match
-  if (!rawStart && !rawEnd) return null
-
-  if (!rawStart) {
-    const suffixLength = Number(rawEnd)
-    if (!Number.isFinite(suffixLength) || suffixLength <= 0) return null
-    const start = Math.max(size - suffixLength, 0)
-    return { start, end: size - 1 }
-  }
-
-  const start = Number(rawStart)
-  const end = rawEnd ? Number(rawEnd) : size - 1
-  if (!Number.isFinite(start) || !Number.isFinite(end)) return null
-  if (start < 0 || start >= size || end < start) return null
-  return { start, end: Math.min(end, size - 1) }
-}
-
-function asciiFilenameFallback(filename: string) {
-  const normalized = filename
-    .normalize("NFKD")
-    .replace(/[^\x20-\x7E]+/g, "_")
-    .replace(/["\\]/g, "_")
-    .trim()
-  return normalized || "document"
-}
-
-function encodeDispositionFilename(filename: string) {
-  return encodeURIComponent(filename)
-    .replace(/['()]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)
-    .replace(/\*/g, "%2A")
-    .replace(/%(7C|60|5E)/g, (match) => String.fromCharCode(Number.parseInt(match.slice(1), 16)))
-}
-
-function contentDispositionHeader(filename: string) {
-  const fallback = asciiFilenameFallback(filename)
-  const encoded = encodeDispositionFilename(filename)
-  return `attachment; filename="${fallback}"; filename*=UTF-8''${encoded}`
-}
-
-function verifyToken(token: string, config: EditorIntegrationConfig) {
-  return verifyEditorJwt(token, config.jwtSecret)
-}
-
-export function createOnlyOfficeApiHandlers(deps: EditorApiDeps) {
-  return {
-    async handleConfig(request: IncomingMessage, response: ServerResponse) {
-      const filePath = new URL(request.url ?? "/", "http://127.0.0.1").searchParams.get("filePath")
+    async handleEditorOpen(request: IncomingMessage, response: ServerResponse) {
+      const url = new URL(request.url ?? "/", "http://127.0.0.1")
+      const filePath = url.searchParams.get("filePath")
       if (!filePath) {
         sendJson(response, 400, { error: "filePath is required", code: "EDITOR_FILE_PATH_REQUIRED" })
-        return
-      }
-
-      const config = deps.getConfig()
-      if (!config.enabled || !config.documentServerUrl || !config.jwtSecret) {
-        sendJson(response, 400, { error: "Document editor not configured", code: "EDITOR_NOT_CONFIGURED" })
         return
       }
 
@@ -161,83 +95,27 @@ export function createOnlyOfficeApiHandlers(deps: EditorApiDeps) {
         return
       }
 
-      const resolution = await resolveEditorBaseUrl(
-        {
-          callbackBaseUrl: config.callbackBaseUrl,
-          documentServerUrl: config.documentServerUrl,
-          localPort: deps.getIngressPort() ?? undefined,
-          autoTunnelEnabled: config.autoTunnelEnabled,
-        },
-        { ensureTunnelReady: deps.ensureTunnelReady },
-      )
-
-      if (!resolution.ok) {
-        sendJson(response, resolution.status, {
-          error: resolution.error,
-          code: resolution.code,
-          details: resolution.details,
-          docHost: resolution.docHost,
-        })
+      // Serve the offline-loader HTML
+      const loaderPath = join(deps.getResourcesPath(), "offline-loader.html")
+      if (!existsSync(loaderPath)) {
+        sendJson(response, 500, { error: "Editor loader not found", code: "EDITOR_LOADER_MISSING" })
         return
       }
 
-      const stat = statSync(filePath)
-      const editorConfig = buildOnlyOfficeConfig({
-        filePath,
-        fileName: basename(filePath),
-        fileExt,
-        fileMtimeMs: stat.mtimeMs,
-        baseUrl: resolution.baseUrl,
-        jwtSecret: config.jwtSecret,
+      const html = readFileSync(loaderPath, "utf8")
+      response.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+        "access-control-allow-origin": "*",
+        "cache-control": "no-cache, no-store",
       })
-
-      if (resolution.mode !== "local") {
-        const downloadProbe = await probeDownloadEndpoint(
-          String((editorConfig as { document?: { url?: string } }).document?.url ?? ""),
-          getMimeType(filePath),
-          deps.fetchExternal,
-        )
-
-        if (!downloadProbe.ok) {
-          sendJson(response, 503, {
-            error: "The hosted document download endpoint is not reachable.",
-            code: "EDITOR_DOWNLOAD_UNREACHABLE",
-            details: downloadProbe.error,
-            docHost: resolution.docHost,
-          })
-          return
-        }
-      }
-
-      sendJson(response, 200, {
-        config: editorConfig,
-        docServerUrl: config.documentServerUrl,
-        transportMode: resolution.mode,
-        callbackBaseUrl: resolution.baseUrl,
-        documentSize: stat.size,
-      })
+      response.end(html)
     },
 
-    async handleDownload(request: IncomingMessage, response: ServerResponse) {
-      const method = (request.method ?? "GET").toUpperCase()
-      if (!["GET", "HEAD"].includes(method)) {
-        response.writeHead(405, { allow: "GET, HEAD" })
-        response.end()
-        return
-      }
-
+    async handleEditorConvert(request: IncomingMessage, response: ServerResponse) {
       const url = new URL(request.url ?? "/", "http://127.0.0.1")
       const filePath = url.searchParams.get("filePath")
-      const token = url.searchParams.get("token")
-      if (!filePath || !token) {
-        sendJson(response, 400, { error: "filePath and token are required" })
-        return
-      }
-
-      const config = deps.getConfig()
-      const payload = verifyToken(token, config)
-      if (!payload || payload.action !== "download" || payload.filePath !== filePath) {
-        sendJson(response, 403, { error: "Invalid or expired token" })
+      if (!filePath) {
+        sendJson(response, 400, { error: "filePath is required" })
         return
       }
 
@@ -246,84 +124,81 @@ export function createOnlyOfficeApiHandlers(deps: EditorApiDeps) {
         return
       }
 
-      const stat = statSync(filePath)
-      const range = parseByteRange(request.headers.range, stat.size)
-      if (request.headers.range && !range) {
-        response.writeHead(416, {
-          "content-range": `bytes */${stat.size}`,
-          "accept-ranges": "bytes",
-          "access-control-allow-origin": "*",
+      try {
+        const result = await convertToBinary({
+          filePath,
+          converterPath: deps.getConverterPath(),
+          cachePath: deps.getCachePath(),
+          fontSelectionPath: deps.getFontSelectionPath(),
         })
-        response.end()
+
+        const stat = statSync(result.binPath)
+        const fileHash = `${stat.mtimeMs.toString(36)}-${stat.size.toString(36)}`
+
+        response.writeHead(200, {
+          "content-type": "application/octet-stream",
+          "content-length": stat.size,
+          "x-file-hash": fileHash,
+          "x-cache": result.cached ? "hit" : "miss",
+          "access-control-allow-origin": "*",
+          "access-control-expose-headers": "x-file-hash, x-cache",
+          "cache-control": "no-cache, no-store",
+        })
+
+        createReadStream(result.binPath).pipe(response)
+      } catch (error) {
+        sendJson(response, 500, {
+          error: `Conversion failed: ${error instanceof Error ? error.message : String(error)}`,
+          code: "EDITOR_CONVERSION_FAILED",
+        })
+      }
+    },
+
+    async handleEditorSave(request: IncomingMessage, response: ServerResponse) {
+      const url = new URL(request.url ?? "/", "http://127.0.0.1")
+      const filePath = url.searchParams.get("filePath")
+      if (!filePath) {
+        sendJson(response, 400, { error: "filePath is required" })
         return
       }
 
-      const headers: Record<string, string | number> = {
-        "content-type": getMimeType(filePath),
-        "content-disposition": contentDispositionHeader(basename(filePath)),
-        "accept-ranges": "bytes",
-        "access-control-allow-origin": "*",
-      }
+      try {
+        const body = await readRawBody(request)
 
-      if (range) {
-        headers["content-length"] = range.end - range.start + 1
-        headers["content-range"] = `bytes ${range.start}-${range.end}/${stat.size}`
-        response.writeHead(206, headers)
-        if (method === "HEAD") {
-          response.end()
+        if (body.length === 0) {
+          sendJson(response, 400, { error: "Empty body" })
           return
         }
-        createReadStream(filePath, { start: range.start, end: range.end }).pipe(response)
-        return
-      }
 
-      headers["content-length"] = stat.size
-      response.writeHead(200, headers)
-      if (method === "HEAD") {
-        response.end()
-        return
-      }
-      createReadStream(filePath).pipe(response)
-    },
+        // Check if the body is already in the target format (PK signature = ZIP-based formats like xlsx/docx/pptx)
+        const ext = extname(filePath).replace(/^\./, "").toLowerCase()
+        const isPkSignature = body.length >= 4 && body[0] === 0x50 && body[1] === 0x4b && body[2] === 0x03 && body[3] === 0x04
+        const isZipFormat = ["xlsx", "docx", "pptx", "odp", "ods", "odt"].includes(ext)
 
-    async handleCallbackGet(_request: IncomingMessage, response: ServerResponse) {
-      sendJson(response, 200, { status: "ok" })
-    },
-
-    async handleCallbackPost(request: IncomingMessage, response: ServerResponse) {
-      const url = new URL(request.url ?? "/", "http://127.0.0.1")
-      const token = url.searchParams.get("token")
-      if (!token) {
-        sendJson(response, 200, { error: 0 })
-        return
-      }
-
-      const config = deps.getConfig()
-      const payload = verifyToken(token, config)
-      if (!payload || payload.action !== "callback") {
-        sendJson(response, 200, { error: 0 })
-        return
-      }
-
-      const body = await readJsonBody(request).catch(() => null)
-      if (!body) {
-        sendJson(response, 200, { error: 0 })
-        return
-      }
-
-      const status = typeof body.status === "number" ? body.status : -1
-      const savedUrl = typeof body.url === "string" ? body.url : ""
-      const filePath = typeof payload.filePath === "string" ? payload.filePath : ""
-
-      if ((status === 2 || status === 6) && savedUrl && filePath) {
-        try {
-          await downloadAndSave(savedUrl, filePath)
-        } catch (error) {
-          console.error("[onlyoffice] Failed to save callback file:", error)
+        if (isPkSignature && isZipFormat) {
+          // Already in the target format — write directly
+          const { writeFileSync } = await import("node:fs")
+          recentSaves.set(filePath, Date.now())
+          writeFileSync(filePath, body)
+        } else {
+          // Convert from binary editor format back to the original format
+          recentSaves.set(filePath, Date.now())
+          await convertFromBinary({
+            binData: body,
+            outputPath: filePath,
+            converterPath: deps.getConverterPath(),
+            cachePath: deps.getCachePath(),
+            fontSelectionPath: deps.getFontSelectionPath(),
+          })
         }
-      }
 
-      sendJson(response, 200, { error: 0 })
+        sendJson(response, 200, { success: true })
+      } catch (error) {
+        sendJson(response, 500, {
+          error: `Save failed: ${error instanceof Error ? error.message : String(error)}`,
+          code: "EDITOR_SAVE_FAILED",
+        })
+      }
     },
 
     async handleFileMtime(request: IncomingMessage, response: ServerResponse) {
@@ -340,202 +215,143 @@ export function createOnlyOfficeApiHandlers(deps: EditorApiDeps) {
       sendJson(response, 200, { mtimeMs: stat.mtimeMs })
     },
 
-    async handleTunnelStatus(_request: IncomingMessage, response: ServerResponse) {
-      const config = deps.getConfig()
-      const status = getTransportMode(config)
-      sendJson(response, 200, {
-        mode: status.mode,
-        docHost: status.docHost,
-        isRemoteDocumentServer: status.isRemoteDocumentServer,
-        callbackBaseUrl: status.manualCallback || null,
-        autoTunnelEnabled: config.autoTunnelEnabled,
-        tunnel: deps.getTunnelState(),
+    async handleFonts(request: IncomingMessage, response: ServerResponse) {
+      const url = new URL(request.url ?? "/", "http://127.0.0.1")
+      // /api/editor/fonts/AllFonts.js → AllFonts.js
+      // /api/editor/fonts/file?path=/System/Library/Fonts/Arial.ttf → serves that font file
+      const restPath = url.pathname.replace(/^\/api\/editor\/fonts\/?/, "")
+
+      if (restPath === "file") {
+        // Serve a font file by absolute path
+        const fontPath = url.searchParams.get("path")
+        if (!fontPath || !existsSync(fontPath)) {
+          response.writeHead(404)
+          response.end("Font not found")
+          return
+        }
+
+        const stat = statSync(fontPath)
+        response.writeHead(200, {
+          "content-type": getStaticMimeType(fontPath),
+          "content-length": stat.size,
+          "access-control-allow-origin": "*",
+          "cache-control": "public, max-age=86400",
+        })
+        createReadStream(fontPath).pipe(response)
+        return
+      }
+
+      // Serve font metadata files from resources/fonts/
+      const fontDataPath = deps.getFontDataPath()
+      const filePath = join(fontDataPath, restPath)
+
+      if (!filePath.startsWith(fontDataPath) || !existsSync(filePath)) {
+        response.writeHead(404)
+        response.end("Not found")
+        return
+      }
+
+      const stat = statSync(filePath)
+      response.writeHead(200, {
+        "content-type": getStaticMimeType(filePath),
+        "content-length": stat.size,
+        "access-control-allow-origin": "*",
+        "cache-control": "public, max-age=3600",
       })
+      createReadStream(filePath).pipe(response)
     },
 
-    async handleTunnelReconnect(_request: IncomingMessage, response: ServerResponse) {
-      const config = deps.getConfig()
-      const status = getTransportMode(config)
+    async handleStatic(request: IncomingMessage, response: ServerResponse) {
+      const url = new URL(request.url ?? "/", "http://127.0.0.1")
+      // /api/editor/static/sdkjs/cell/sdk-all.js → resources/editors/sdkjs/cell/sdk-all.js
+      const restPath = url.pathname.replace(/^\/api\/editor\/static\/?/, "")
 
-      if (!status.isRemoteDocumentServer) {
-        sendJson(response, 400, {
-          error: "Reconnect is only needed for remote Document Server mode.",
-          code: "EDITOR_TUNNEL_NOT_REQUIRED",
-        })
+      if (!restPath) {
+        response.writeHead(400)
+        response.end("Path required")
         return
       }
 
-      if (status.manualCallback) {
-        sendJson(response, 400, {
-          error: "Manual Callback Base URL is configured. Clear it to use auto tunnel.",
-          code: "EDITOR_TUNNEL_MANUAL_OVERRIDE",
-        })
+      // Override sdkjs/common/AllFonts.js with the generated font metadata
+      if (restPath === "sdkjs/common/AllFonts.js") {
+        const allFontsPath = join(deps.getFontDataPath(), "AllFonts.js")
+        if (existsSync(allFontsPath)) {
+          const stat = statSync(allFontsPath)
+          response.writeHead(200, {
+            "content-type": "application/javascript; charset=utf-8",
+            "content-length": stat.size,
+            "access-control-allow-origin": "*",
+            "cache-control": "no-cache",
+          })
+          createReadStream(allFontsPath).pipe(response)
+          return
+        }
+      }
+
+      const resourcesPath = deps.getResourcesPath()
+      const filePath = join(resourcesPath, restPath)
+
+      // Prevent directory traversal
+      if (!filePath.startsWith(resourcesPath)) {
+        response.writeHead(403)
+        response.end("Forbidden")
         return
       }
 
-      if (config.autoTunnelEnabled === false) {
-        sendJson(response, 400, {
-          error: "Auto Tunnel is disabled. Enable it in settings.",
-          code: "EDITOR_TUNNEL_DISABLED",
-        })
+      if (!existsSync(filePath)) {
+        response.writeHead(404)
+        response.end("Not found")
         return
       }
 
-      const reconnect = await deps.reconnectTunnel()
-      if (!reconnect.baseUrl) {
-        sendJson(response, 503, {
-          error: "Failed to reconnect auto tunnel.",
-          code: "EDITOR_TUNNEL_UNAVAILABLE",
-          details: reconnect.error,
-          tunnel: deps.getTunnelState(),
-        })
+      const stat = statSync(filePath)
+      if (!stat.isFile()) {
+        response.writeHead(404)
+        response.end("Not found")
         return
       }
 
-      sendJson(response, 200, {
-        success: true,
-        callbackBaseUrl: reconnect.baseUrl,
-        tunnel: deps.getTunnelState(),
+      // For HTML files (e.g. editor's index.html loaded in inner iframe),
+      // inject the desktop-stub so window.AscDesktopEditor is available.
+      const fileName = basename(filePath)
+      if (fileName.endsWith(".html")) {
+        // Read the original request's query params — the outer iframe passes
+        // filePath and serviceUrl that the desktop stub needs.
+        const outerUrl = new URL(request.headers.referer ?? "", "http://127.0.0.1")
+        const filePathParam = outerUrl.searchParams.get("filePath") ?? ""
+        const serviceUrlParam = outerUrl.searchParams.get("serviceUrl") ?? ""
+
+        let html = readFileSync(filePath, "utf8")
+        // Inject desktop stub as the first script in <head> (or before first <script>)
+        const stubUrl = `/api/editor/static/desktop-stub.js?filePath=${encodeURIComponent(filePathParam)}&serviceUrl=${encodeURIComponent(serviceUrlParam)}`
+        const stubTag = `<script src="${stubUrl}"></script>`
+
+        if (html.includes("<head>")) {
+          html = html.replace("<head>", `<head>${stubTag}`)
+        } else if (html.includes("<HEAD>")) {
+          html = html.replace("<HEAD>", `<HEAD>${stubTag}`)
+        } else {
+          html = stubTag + html
+        }
+
+        const buf = Buffer.from(html, "utf8")
+        response.writeHead(200, {
+          "content-type": "text/html; charset=utf-8",
+          "content-length": buf.length,
+          "access-control-allow-origin": "*",
+          "cache-control": "no-cache",
+        })
+        response.end(buf)
+        return
+      }
+
+      response.writeHead(200, {
+        "content-type": getStaticMimeType(filePath),
+        "content-length": stat.size,
+        "access-control-allow-origin": "*",
+        "cache-control": "public, max-age=3600",
       })
-    },
-
-    async handleEditorIntegrationUpdate(
-      request: IncomingMessage,
-      response: ServerResponse,
-      updateConfig: (next: Partial<EditorIntegrationConfig>) => Promise<void>,
-    ) {
-      const body = await readJsonBody(request).catch(() => ({}))
-      await updateConfig(body as Partial<EditorIntegrationConfig>)
-      sendJson(response, 200, { success: true })
-    },
-
-    async handleEditorIntegrationTest(_request: IncomingMessage, response: ServerResponse) {
-      const config = deps.getConfig()
-      if (!config.documentServerUrl) {
-        sendJson(response, 200, { success: false, message: "Document Server URL is required" })
-        return
-      }
-      if (!config.jwtSecret) {
-        sendJson(response, 200, { success: false, message: "JWT Secret is required" })
-        return
-      }
-
-      const parsedDocServer = tryParseUrl(config.documentServerUrl)
-      if (!parsedDocServer || !["http:", "https:"].includes(parsedDocServer.protocol)) {
-        sendJson(response, 200, { success: false, message: "Document Server URL must be a valid http(s) URL" })
-        return
-      }
-
-      const status = getTransportMode(config)
-      if (!status.manualCallback && status.isRemoteDocumentServer && config.autoTunnelEnabled === false) {
-        sendJson(response, 200, {
-          success: false,
-          message:
-            `Callback Base URL is required for remote Document Server (${status.docHost}). ` +
-            "Set it manually or enable Auto Tunnel.",
-        })
-        return
-      }
-
-      if (status.manualCallback) {
-        const parsedCallback = tryParseUrl(status.manualCallback)
-        if (!parsedCallback || !["http:", "https:"].includes(parsedCallback.protocol)) {
-          sendJson(response, 200, { success: false, message: "Callback Base URL must be a valid http(s) URL" })
-          return
-        }
-        if (!isLocalDocumentServerHost(status.docHost) && isLoopbackHost(parsedCallback.hostname)) {
-          sendJson(response, 200, {
-            success: false,
-            message: `Callback Base URL host (${parsedCallback.hostname}) is local-only and not reachable from ${status.docHost}.`,
-          })
-          return
-        }
-      }
-
-      try {
-        const health = await fetch(`${config.documentServerUrl.replace(/\/+$/, "")}/healthcheck`, {
-          signal: AbortSignal.timeout(10000),
-        })
-        const body = await health.text()
-        if (!(body === "true" || health.ok)) {
-          sendJson(response, 200, { success: false, message: `Server returned: ${body}` })
-          return
-        }
-
-        if (status.manualCallback) {
-          const probe = await probeCallbackEndpoint(status.manualCallback, deps.fetchExternal)
-          if (!probe.ok) {
-            sendJson(response, 200, {
-              success: false,
-              message: `Document Server reachable; callback probe failed: ${probe.error}`,
-            })
-            return
-          }
-          sendJson(response, 200, { success: true, message: "Document Server reachable; callback verified" })
-          return
-        }
-
-        if (status.isRemoteDocumentServer && config.autoTunnelEnabled !== false) {
-          const tunnel = await deps.ensureTunnelReady()
-          if (!tunnel.baseUrl) {
-            sendJson(response, 200, {
-              success: false,
-              message: `Document Server reachable, but auto tunnel failed. ${tunnel.error ?? "Unknown tunnel error"}`,
-            })
-            return
-          }
-          const probe = await probeCallbackEndpoint(tunnel.baseUrl, deps.fetchExternal)
-          if (!probe.ok) {
-            sendJson(response, 200, {
-              success: false,
-              message: `Auto tunnel probe failed: ${probe.error}`,
-            })
-            return
-          }
-          sendJson(response, 200, {
-            success: true,
-            message: `Document Server reachable; auto tunnel ready (${tunnel.baseUrl})`,
-          })
-          return
-        }
-
-        sendJson(response, 200, { success: true, message: "Document Server reachable" })
-      } catch (error) {
-        sendJson(response, 200, {
-          success: false,
-          message: `Cannot reach Document Server: ${error instanceof Error ? error.message : String(error)}`,
-        })
-      }
+      createReadStream(filePath).pipe(response)
     },
   }
-}
-
-function downloadAndSave(url: string, destination: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const client = url.startsWith("https:") ? import("node:https") : import("node:http")
-    void client.then(({ get }) => {
-      get(url, (response) => {
-        if (response.statusCode === 301 || response.statusCode === 302) {
-          const redirect = response.headers.location
-          if (redirect) {
-            downloadAndSave(redirect, destination).then(resolve).catch(reject)
-            return
-          }
-        }
-
-        if (response.statusCode !== 200) {
-          reject(new Error(`Download failed with status ${response.statusCode}`))
-          return
-        }
-
-        const stream = createWriteStream(destination)
-        response.pipe(stream)
-        stream.on("finish", () => {
-          stream.close()
-          resolve()
-        })
-        stream.on("error", reject)
-      }).on("error", reject)
-    }, reject)
-  })
 }

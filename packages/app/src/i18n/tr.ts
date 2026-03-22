@@ -102,15 +102,10 @@ export const dict = {
   "dialog.provider.group.popular": "Popüler",
   "dialog.provider.group.other": "Diğer",
   "dialog.provider.tag.recommended": "Önerilen",
-  "dialog.provider.opencode.note": "Claude, GPT, Gemini ve daha fazlasını içeren seçilmiş modeller",
+  "dialog.provider.opencode.note": "Renvel AI, GPT, Gemini ve daha fazlasını içeren seçilmiş modeller",
   "dialog.provider.opencode.tagline": "Güvenilir optimize edilmiş modeller",
   "dialog.provider.opencodeGo.tagline": "Herkes için düşük maliyetli abonelik",
-  "dialog.provider.anthropic.note": "Pro ve Max dahil Claude modellerine doğrudan erişim",
-  "dialog.provider.copilot.note": "GitHub Copilot üzerinden kodlama yardımı için yapay zekâ modelleri",
-  "dialog.provider.openai.note": "Hızlı ve yetenekli genel yapay zekâ görevleri için GPT modelleri",
-  "dialog.provider.google.note": "Hızlı ve yapılandırılmış yanıtlar için Gemini modelleri",
-  "dialog.provider.openrouter.note": "Tek bir sağlayıcıdan tüm desteklenen modellere eriş",
-  "dialog.provider.vercel.note": "Akıllı yönlendirme ile yapay zekâ modellerine birleşik erişim",
+  "dialog.provider.renvel.note": "Direct access to Renvel AI models, including Premium tiers",
 
   "dialog.model.select.title": "Model seç",
   "dialog.model.search.placeholder": "Model ara",
@@ -125,7 +120,7 @@ export const dict = {
   "dialog.provider.viewAll": "Daha fazla sağlayıcı göster",
 
   "provider.connect.title": "{{provider}} bağla",
-  "provider.connect.title.anthropicProMax": "Claude Pro/Max ile giriş yap",
+  "provider.connect.title.renvelPremium": "Login with Renvel AI Premium",
   "provider.connect.selectMethod": "{{provider}} için giriş yöntemini seçin.",
   "provider.connect.method.apiKey": "API anahtarı",
   "provider.connect.status.inProgress": "Yetkilendirme devam ediyor...",
@@ -139,7 +134,7 @@ export const dict = {
   "provider.connect.opencodeZen.line1":
     "Rendesk Zen, kodlama ajanları için seçilmiş güvenilir optimize edilmiş modellere erişim sağlar.",
   "provider.connect.opencodeZen.line2":
-    "Tek bir API anahtarıyla Claude, GPT, Gemini, GLM ve daha fazlası gibi modellere erişebilirsiniz.",
+    "Tek bir API anahtarıyla Renvel AI, GPT, Gemini, GLM ve daha fazlası gibi modellere erişebilirsiniz.",
   "provider.connect.opencodeZen.visit.prefix": "",
   "provider.connect.opencodeZen.visit.link": "Rendesk",
   "provider.connect.opencodeZen.visit.suffix": " adresini ziyaret ederek API anahtarınızı alın.",
@@ -202,7 +197,7 @@ export const dict = {
 
   "model.tag.free": "Ücretsiz",
   "model.tag.latest": "En yeni",
-  "model.provider.anthropic": "Anthropic",
+  "model.provider.renvel": "Renvel AI",
   "model.provider.openai": "OpenAI",
   "model.provider.google": "Google",
   "model.provider.xai": "xAI",
@@ -592,7 +587,7 @@ export const dict = {
   "sidebar.workspaces.disable": "Çalışma alanlarını devre dışı bırak",
   "sidebar.gettingStarted.title": "Başlarken",
   "sidebar.gettingStarted.line1": "Rendesk ücretsiz modeller içerir, böylece hemen başlayabilirsiniz.",
-  "sidebar.gettingStarted.line2": "Claude, GPT, Gemini vb. modelleri kullanmak için herhangi bir sağlayıcı bağlayın.",
+  "sidebar.gettingStarted.line2": "Model access is managed by your organization. No provider connection is required.",
   "sidebar.project.recentSessions": "Son oturumlar",
   "sidebar.project.viewAllSessions": "Tüm oturumları görüntüle",
   "sidebar.project.clearNotifications": "Bildirimleri temizle",

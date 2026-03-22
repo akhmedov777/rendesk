@@ -1,5 +1,6 @@
 import "@/index.css"
 import "@/features/dashboard/register-tools"
+import "@/features/python/register-tools"
 import { File } from "@rendesk/ui/file"
 import { I18nProvider } from "@rendesk/ui/context"
 import { DialogProvider } from "@rendesk/ui/context/dialog"

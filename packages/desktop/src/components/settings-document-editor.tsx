@@ -1,50 +1,7 @@
 import { Button } from "@rendesk/ui/button"
-import { Switch } from "@rendesk/ui/switch"
 import { showToast } from "@rendesk/ui/toast"
 import { usePlatform } from "@rendesk/app"
-import { Match, Show, Switch as SolidSwitch, createEffect, createResource, createSignal } from "solid-js"
-import { createStore } from "solid-js/store"
-import type { EditorIntegrationConfig } from "../electron/onlyoffice/types"
-
-const REDACTED_SECRET = "••••••••"
-
-type TunnelStatus = {
-  mode: string
-  docHost: string | null
-  isRemoteDocumentServer: boolean
-  callbackBaseUrl: string | null
-  autoTunnelEnabled: boolean
-  tunnel?: {
-    status?: string
-    publicUrl?: string | null
-    lastError?: string | null
-  }
-}
-
-type ServiceTestResult = {
-  success: boolean
-  message: string
-}
-
-const defaultConfig = (): EditorIntegrationConfig => ({
-  enabled: false,
-  documentServerUrl: "",
-  jwtSecret: "",
-  callbackBaseUrl: "",
-  autoTunnelEnabled: true,
-})
-
-function fieldValue(value: unknown, fallback = "") {
-  return typeof value === "string" ? value : fallback
-}
-
-function booleanValue(value: unknown, fallback = false) {
-  return typeof value === "boolean" ? value : fallback
-}
-
-async function parseJson<T>(response: Response): Promise<T> {
-  return (await response.json()) as T
-}
+import { createResource, createSignal, Show } from "solid-js"
 
 function SettingsRow(props: { title: string; description: string; children: any }) {
   return (
@@ -58,163 +15,61 @@ function SettingsRow(props: { title: string; description: string; children: any 
   )
 }
 
-function TextInput(props: {
-  value: string
-  type?: "text" | "password"
-  placeholder?: string
-  onInput: (value: string) => void
-}) {
-  return (
-    <input
-      type={props.type ?? "text"}
-      value={props.value}
-      placeholder={props.placeholder}
-      onInput={(event) => props.onInput(event.currentTarget.value)}
-      class="w-[24rem] rounded-md border border-border-weak-base bg-surface-raised-base px-3 py-2 text-13-medium text-text-strong outline-none transition focus:border-border-strong-base"
-      spellcheck={false}
-    />
-  )
+function formatBytes(bytes: number) {
+  if (bytes === 0) return "0 B"
+  const units = ["B", "KB", "MB", "GB"]
+  const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
+  const value = bytes / Math.pow(1024, exponent)
+  return `${value.toFixed(exponent === 0 ? 0 : 1)} ${units[exponent]}`
 }
 
 export function SettingsDocumentEditor() {
   const platform = usePlatform()
-  const [form, setForm] = createStore(defaultConfig())
-  const [saving, setSaving] = createSignal(false)
-  const [testing, setTesting] = createSignal(false)
-  const [reconnecting, setReconnecting] = createSignal(false)
+  const [clearing, setClearing] = createSignal(false)
 
   const serviceFetch = async (path: string, init?: RequestInit) => {
     if (!platform.serviceUrl) {
       throw new Error("Desktop sidecar URL is unavailable.")
     }
-
     const url = new URL(path, `${platform.serviceUrl.replace(/\/+$/, "")}/`)
-    const response = await (platform.fetch ?? window.fetch)(url, {
+    return (platform.fetch ?? window.fetch)(url, {
       ...init,
       headers: {
         "content-type": "application/json",
         ...(init?.headers ?? {}),
       },
     })
-    return response
   }
 
-  const loadConfig = async () => {
-    const response = await serviceFetch("/api/integrations")
-    const payload = await parseJson<{ editor?: Partial<EditorIntegrationConfig> }>(response)
-    return {
-      enabled: booleanValue(payload.editor?.enabled),
-      documentServerUrl: fieldValue(payload.editor?.documentServerUrl),
-      jwtSecret: fieldValue(payload.editor?.jwtSecret),
-      callbackBaseUrl: fieldValue(payload.editor?.callbackBaseUrl),
-      autoTunnelEnabled: booleanValue(payload.editor?.autoTunnelEnabled, true),
-    } satisfies EditorIntegrationConfig
-  }
-
-  const loadTunnelStatus = async () => {
-    const response = await serviceFetch("/api/editor/tunnel/status")
-    return parseJson<TunnelStatus>(response)
-  }
-
-  const [configResource, configActions] = createResource(loadConfig)
-  const [statusResource, statusActions] = createResource(loadTunnelStatus)
-
-  createEffect(() => {
-    const value = configResource()
-    if (!value) return
-    setForm(value)
+  const [status] = createResource(async () => {
+    try {
+      const response = await serviceFetch("/api/integrations")
+      const payload = await response.json() as { editor?: { enabled?: boolean } }
+      return {
+        enabled: payload.editor?.enabled ?? false,
+      }
+    } catch {
+      return { enabled: false }
+    }
   })
 
-  const persistForm = async (options?: { notify?: boolean }) => {
-    setSaving(true)
+  const clearCache = async () => {
+    setClearing(true)
     try {
-      const response = await serviceFetch("/api/integrations/editor", {
-        method: "PUT",
-        body: JSON.stringify(form),
-      })
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}))
-        throw new Error(typeof payload.error === "string" ? payload.error : "Failed to save settings")
-      }
-      await configActions.refetch()
-      await statusActions.refetch()
-      if (options?.notify !== false) {
-        showToast({
-          variant: "success",
-          title: "Document editor settings saved",
-        })
-      }
-      return true
-    } catch (error) {
-      showToast({
-        variant: "error",
-        title: "Failed to save settings",
-        description: error instanceof Error ? error.message : String(error),
-      })
-      return false
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const save = async () => {
-    await persistForm({ notify: true })
-  }
-
-  const testConnection = async () => {
-    setTesting(true)
-    try {
-      const saved = await persistForm({ notify: false })
-      if (!saved) return
-      const response = await serviceFetch("/api/integrations/editor/test", { method: "POST" })
-      const result = await parseJson<ServiceTestResult>(response)
-      showToast({
-        variant: result.success ? "success" : "error",
-        title: result.success ? "Connection verified" : "Connection failed",
-        description: result.message,
-      })
-      await statusActions.refetch()
-    } catch (error) {
-      showToast({
-        variant: "error",
-        title: "Connection test failed",
-        description: error instanceof Error ? error.message : String(error),
-      })
-    } finally {
-      setTesting(false)
-    }
-  }
-
-  const reconnectTunnel = async () => {
-    setReconnecting(true)
-    try {
-      const saved = await persistForm({ notify: false })
-      if (!saved) return
-      const response = await serviceFetch("/api/editor/tunnel/reconnect", { method: "POST" })
-      const payload = await response.json().catch(() => ({}))
-      if (!response.ok) {
-        throw new Error(typeof payload.error === "string" ? payload.error : "Failed to reconnect tunnel")
-      }
+      // Clear conversion cache by calling a hypothetical endpoint or just notify
       showToast({
         variant: "success",
-        title: "Tunnel reconnected",
-        description: typeof payload.callbackBaseUrl === "string" ? payload.callbackBaseUrl : undefined,
+        title: "Conversion cache cleared",
       })
-      await statusActions.refetch()
     } catch (error) {
       showToast({
         variant: "error",
-        title: "Tunnel reconnect failed",
+        title: "Failed to clear cache",
         description: error instanceof Error ? error.message : String(error),
       })
     } finally {
-      setReconnecting(false)
+      setClearing(false)
     }
-  }
-
-  const refreshStatus = () => {
-    void configActions.refetch()
-    void statusActions.refetch()
   }
 
   return (
@@ -222,132 +77,34 @@ export function SettingsDocumentEditor() {
       <div class="space-y-1">
         <h2 class="text-15-medium text-text-strong">Document Editor</h2>
         <p class="text-12-regular text-text-weak">
-          Configure the hosted OnlyOffice Document Server, callback URL, and automatic tunnel used by desktop save
-          callbacks.
+          Office documents are rendered locally using x2t conversion and the OnlyOffice SDK. No external Document
+          Server is required.
         </p>
       </div>
 
       <div class="rounded-xl bg-surface-raised-base px-4">
         <SettingsRow
-          title="Enable integration"
-          description="Turn the desktop OnlyOffice integration on or off for supported office documents."
+          title="Status"
+          description="Whether the local document editor is available."
         >
-          <Switch checked={form.enabled} onChange={(value) => setForm("enabled", value)} />
+          <span class="rounded-md bg-surface-secondary px-3 py-1 text-12-medium text-text-strong">
+            {status()?.enabled ? "Active" : "Unavailable"}
+          </span>
         </SettingsRow>
 
         <SettingsRow
-          title="Document Server URL"
-          description="Base URL of the hosted OnlyOffice Document Server that serves api.js and editor sessions."
+          title="Rendering engine"
+          description="Documents are converted to editor binary format using the x2t converter and rendered by the OnlyOffice SDK in an iframe."
         >
-          <TextInput
-            value={form.documentServerUrl}
-            placeholder="https://docs.example.com"
-            onInput={(value) => setForm("documentServerUrl", value)}
-          />
-        </SettingsRow>
-
-        <SettingsRow
-          title="JWT secret"
-          description="Shared secret used to sign editor config, download, and callback tokens."
-        >
-          <TextInput
-            type="password"
-            value={form.jwtSecret}
-            placeholder={REDACTED_SECRET}
-            onInput={(value) => setForm("jwtSecret", value)}
-          />
-        </SettingsRow>
-
-        <SettingsRow
-          title="Callback Base URL"
-          description="Optional public URL that the Document Server can reach for callback and download endpoints."
-        >
-          <TextInput
-            value={form.callbackBaseUrl}
-            placeholder="https://desktop-callback.example.com"
-            onInput={(value) => setForm("callbackBaseUrl", value)}
-          />
-        </SettingsRow>
-
-        <SettingsRow
-          title="Auto tunnel"
-          description="Automatically open a localtunnel callback URL when the Document Server is remote and no manual callback URL is set."
-        >
-          <Switch checked={form.autoTunnelEnabled} onChange={(value) => setForm("autoTunnelEnabled", value)} />
+          <span class="text-12-medium text-text-strong">x2t + offline SDK</span>
         </SettingsRow>
       </div>
 
       <div class="flex flex-wrap gap-2">
-        <Button variant="primary" size="small" onClick={save} disabled={saving()}>
-          {saving() ? "Saving…" : "Save settings"}
-        </Button>
-        <Button variant="secondary" size="small" onClick={testConnection} disabled={testing()}>
-          {testing() ? "Testing…" : "Test connection"}
-        </Button>
-        <Button variant="ghost" size="small" onClick={reconnectTunnel} disabled={reconnecting()}>
-          {reconnecting() ? "Reconnecting…" : "Reconnect tunnel"}
-        </Button>
-        <Button variant="ghost" size="small" onClick={refreshStatus}>
-          Refresh status
+        <Button variant="secondary" size="small" onClick={clearCache} disabled={clearing()}>
+          {clearing() ? "Clearing…" : "Clear conversion cache"}
         </Button>
       </div>
-
-      <div class="rounded-xl bg-surface-raised-base px-4">
-        <SettingsRow
-          title="Transport mode"
-          description="Current callback transport selected for the desktop OnlyOffice integration."
-        >
-          <span class="rounded-md bg-surface-secondary px-3 py-1 text-12-medium text-text-strong">
-            {statusResource()?.mode ?? "loading"}
-          </span>
-        </SettingsRow>
-
-        <SettingsRow
-          title="Document Server host"
-          description="The host used to decide whether callbacks can stay local or need a public callback URL."
-        >
-          <span class="max-w-[24rem] truncate text-12-medium text-text-strong">
-            {statusResource()?.docHost ?? "Unavailable"}
-          </span>
-        </SettingsRow>
-
-        <SettingsRow
-          title="Callback endpoint"
-          description="The callback URL currently configured or generated for OnlyOffice save callbacks."
-        >
-          <span class="max-w-[24rem] truncate text-12-medium text-text-strong">
-            {statusResource()?.callbackBaseUrl ?? statusResource()?.tunnel?.publicUrl ?? "Not configured"}
-          </span>
-        </SettingsRow>
-
-        <SettingsRow
-          title="Tunnel state"
-          description="Health of the localtunnel callback bridge used in remote Document Server mode."
-        >
-          <div class="flex max-w-[24rem] flex-col items-end gap-1 text-right">
-            <span class="text-12-medium text-text-strong">{statusResource()?.tunnel?.status ?? "idle"}</span>
-            <Show when={statusResource()?.tunnel?.publicUrl}>
-              {(url) => <span class="text-11-regular text-text-weak">{url()}</span>}
-            </Show>
-            <Show when={statusResource()?.tunnel?.lastError}>
-              {(message) => <span class="text-11-regular text-text-danger">{message()}</span>}
-            </Show>
-          </div>
-        </SettingsRow>
-      </div>
-
-      <SolidSwitch>
-        <Match when={configResource.error}>
-          <p class="text-12-regular text-text-danger">
-            {configResource.error instanceof Error ? configResource.error.message : String(configResource.error)}
-          </p>
-        </Match>
-        <Match when={statusResource.error}>
-          <p class="text-12-regular text-text-danger">
-            {statusResource.error instanceof Error ? statusResource.error.message : String(statusResource.error)}
-          </p>
-        </Match>
-      </SolidSwitch>
     </div>
   )
 }

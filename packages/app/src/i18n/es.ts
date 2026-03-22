@@ -98,15 +98,10 @@ export const dict = {
   "dialog.provider.group.popular": "Popular",
   "dialog.provider.group.other": "Otro",
   "dialog.provider.tag.recommended": "Recomendado",
-  "dialog.provider.opencode.note": "Modelos seleccionados incluyendo Claude, GPT, Gemini y más",
+  "dialog.provider.opencode.note": "Modelos seleccionados incluyendo Renvel AI, GPT, Gemini y más",
   "dialog.provider.opencode.tagline": "Modelos optimizados y fiables",
   "dialog.provider.opencodeGo.tagline": "Suscripción económica para todos",
-  "dialog.provider.anthropic.note": "Acceso directo a modelos Claude, incluyendo Pro y Max",
-  "dialog.provider.copilot.note": "Modelos de IA para asistencia de codificación a través de GitHub Copilot",
-  "dialog.provider.openai.note": "Modelos GPT para tareas de IA generales rápidas y capaces",
-  "dialog.provider.google.note": "Modelos Gemini para respuestas rápidas y estructuradas",
-  "dialog.provider.openrouter.note": "Accede a todos los modelos soportados desde un solo proveedor",
-  "dialog.provider.vercel.note": "Acceso unificado a modelos de IA con enrutamiento inteligente",
+  "dialog.provider.renvel.note": "Direct access to Renvel AI models, including Premium tiers",
 
   "dialog.model.select.title": "Seleccionar modelo",
   "dialog.model.search.placeholder": "Buscar modelos",
@@ -120,7 +115,7 @@ export const dict = {
   "dialog.provider.viewAll": "Ver más proveedores",
 
   "provider.connect.title": "Conectar {{provider}}",
-  "provider.connect.title.anthropicProMax": "Iniciar sesión con Claude Pro/Max",
+  "provider.connect.title.renvelPremium": "Login with Renvel AI Premium",
   "provider.connect.selectMethod": "Seleccionar método de inicio de sesión para {{provider}}.",
   "provider.connect.method.apiKey": "Clave API",
   "provider.connect.status.inProgress": "Autorización en progreso...",
@@ -134,7 +129,7 @@ export const dict = {
   "provider.connect.opencodeZen.line1":
     "Rendesk Zen te da acceso a un conjunto curado de modelos fiables optimizados para agentes de programación.",
   "provider.connect.opencodeZen.line2":
-    "Con una sola clave API obtendrás acceso a modelos como Claude, GPT, Gemini, GLM y más.",
+    "Con una sola clave API obtendrás acceso a modelos como Renvel AI, GPT, Gemini, GLM y más.",
   "provider.connect.opencodeZen.visit.prefix": "Visita ",
   "provider.connect.opencodeZen.visit.link": "Rendesk",
   "provider.connect.opencodeZen.visit.suffix": " para obtener tu clave API.",
@@ -196,7 +191,7 @@ export const dict = {
 
   "model.tag.free": "Gratis",
   "model.tag.latest": "Último",
-  "model.provider.anthropic": "Anthropic",
+  "model.provider.renvel": "Renvel AI",
   "model.provider.openai": "OpenAI",
   "model.provider.google": "Google",
   "model.provider.xai": "xAI",
@@ -586,7 +581,7 @@ export const dict = {
   "sidebar.workspaces.disable": "Deshabilitar espacios de trabajo",
   "sidebar.gettingStarted.title": "Empezando",
   "sidebar.gettingStarted.line1": "Rendesk incluye modelos gratuitos para que puedas empezar inmediatamente.",
-  "sidebar.gettingStarted.line2": "Conecta cualquier proveedor para usar modelos, inc. Claude, GPT, Gemini etc.",
+  "sidebar.gettingStarted.line2": "Model access is managed by your organization. No provider connection is required.",
   "sidebar.project.recentSessions": "Sesiones recientes",
   "sidebar.project.viewAllSessions": "Ver todas las sesiones",
   "sidebar.project.clearNotifications": "Borrar notificaciones",

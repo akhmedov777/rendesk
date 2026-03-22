@@ -98,15 +98,10 @@ export const dict = {
   "dialog.provider.group.popular": "ยอดนิยม",
   "dialog.provider.group.other": "อื่น ๆ",
   "dialog.provider.tag.recommended": "แนะนำ",
-  "dialog.provider.opencode.note": "โมเดลที่คัดสรร รวมถึง Claude, GPT, Gemini และอื่น ๆ",
+  "dialog.provider.opencode.note": "โมเดลที่คัดสรร รวมถึง Renvel AI, GPT, Gemini และอื่น ๆ",
   "dialog.provider.opencode.tagline": "โมเดลที่เชื่อถือได้และปรับให้เหมาะสม",
   "dialog.provider.opencodeGo.tagline": "การสมัครสมาชิกราคาประหยัดสำหรับทุกคน",
-  "dialog.provider.anthropic.note": "เข้าถึงโมเดล Claude โดยตรง รวมถึง Pro และ Max",
-  "dialog.provider.copilot.note": "โมเดล AI สำหรับการช่วยเหลือในการเขียนโค้ดผ่าน GitHub Copilot",
-  "dialog.provider.openai.note": "โมเดล GPT สำหรับงาน AI ทั่วไปที่รวดเร็วและมีความสามารถ",
-  "dialog.provider.google.note": "โมเดล Gemini สำหรับการตอบสนองที่รวดเร็วและมีโครงสร้าง",
-  "dialog.provider.openrouter.note": "เข้าถึงโมเดลที่รองรับทั้งหมดจากผู้ให้บริการเดียว",
-  "dialog.provider.vercel.note": "การเข้าถึงโมเดล AI แบบรวมด้วยการกำหนดเส้นทางอัจฉริยะ",
+  "dialog.provider.renvel.note": "Direct access to Renvel AI models, including Premium tiers",
 
   "dialog.model.select.title": "เลือกโมเดล",
   "dialog.model.search.placeholder": "ค้นหาโมเดล",
@@ -120,7 +115,7 @@ export const dict = {
   "dialog.provider.viewAll": "แสดงผู้ให้บริการเพิ่มเติม",
 
   "provider.connect.title": "เชื่อมต่อ {{provider}}",
-  "provider.connect.title.anthropicProMax": "เข้าสู่ระบบด้วย Claude Pro/Max",
+  "provider.connect.title.renvelPremium": "Login with Renvel AI Premium",
   "provider.connect.selectMethod": "เลือกวิธีการเข้าสู่ระบบสำหรับ {{provider}}",
   "provider.connect.method.apiKey": "คีย์ API",
   "provider.connect.status.inProgress": "กำลังอนุญาต...",
@@ -134,7 +129,7 @@ export const dict = {
   "provider.connect.opencodeZen.line1":
     "Rendesk Zen ให้คุณเข้าถึงชุดโมเดลที่เชื่อถือได้และปรับแต่งแล้วสำหรับเอเจนต์การเขียนโค้ด",
   "provider.connect.opencodeZen.line2":
-    "ด้วยคีย์ API เดียวคุณจะได้รับการเข้าถึงโมเดล เช่น Claude, GPT, Gemini, GLM และอื่น ๆ",
+    "ด้วยคีย์ API เดียวคุณจะได้รับการเข้าถึงโมเดล เช่น Renvel AI, GPT, Gemini, GLM และอื่น ๆ",
   "provider.connect.opencodeZen.visit.prefix": "เยี่ยมชม ",
   "provider.connect.opencodeZen.visit.link": "Rendesk",
   "provider.connect.opencodeZen.visit.suffix": " เพื่อรวบรวมคีย์ API ของคุณ",
@@ -196,7 +191,7 @@ export const dict = {
 
   "model.tag.free": "ฟรี",
   "model.tag.latest": "ล่าสุด",
-  "model.provider.anthropic": "Anthropic",
+  "model.provider.renvel": "Renvel AI",
   "model.provider.openai": "OpenAI",
   "model.provider.google": "Google",
   "model.provider.xai": "xAI",
@@ -578,7 +573,7 @@ export const dict = {
   "sidebar.workspaces.disable": "ปิดใช้งานพื้นที่ทำงาน",
   "sidebar.gettingStarted.title": "เริ่มต้นใช้งาน",
   "sidebar.gettingStarted.line1": "Rendesk รวมถึงโมเดลฟรีเพื่อให้คุณเริ่มต้นได้ทันที",
-  "sidebar.gettingStarted.line2": "เชื่อมต่อผู้ให้บริการใด ๆ เพื่อใช้โมเดล รวมถึง Claude, GPT, Gemini ฯลฯ",
+  "sidebar.gettingStarted.line2": "Model access is managed by your organization. No provider connection is required.",
   "sidebar.project.recentSessions": "เซสชันล่าสุด",
   "sidebar.project.viewAllSessions": "ดูเซสชันทั้งหมด",
   "sidebar.project.clearNotifications": "ล้างการแจ้งเตือน",

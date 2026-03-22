@@ -1,9 +1,8 @@
-import { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, nativeTheme, safeStorage, shell } from "electron"
+import { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, nativeTheme, shell } from "electron"
 import { spawn, spawnSync } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import { dirname, join } from "node:path"
 import { bootstrapDesktopEnv } from "./env.js"
-import { createProviderAuthStore } from "./provider-auth-store.js"
 import type { ActiveEditorState } from "./onlyoffice/types.js"
 import { createLocalService } from "./service.js"
 
@@ -25,12 +24,29 @@ const devServerUrl = process.env.VITE_DEV_SERVER_URL
 let mainWindow: any
 let localService: Awaited<ReturnType<typeof createLocalService>> | undefined
 let editorToolCounter = 0
-let authStore: ReturnType<typeof createProviderAuthStore> | undefined
+let pyodideRequestCounter = 0
 
 const pendingEditorToolRequests = new Map<
   string,
   {
     resolve: (result: string) => void
+    reject: (error: Error) => void
+    timeout: ReturnType<typeof setTimeout>
+  }
+>()
+
+type PyodideExecuteResult = {
+  success: boolean
+  result?: string
+  stdout: string
+  stderr: string
+  images: string[]
+}
+
+const pendingPyodideRequests = new Map<
+  string,
+  {
+    resolve: (result: PyodideExecuteResult) => void
     reject: (error: Error) => void
     timeout: ReturnType<typeof setTimeout>
   }
@@ -108,6 +124,34 @@ const sendEditorToolRequest = (toolName: string, toolInput: Record<string, unkno
     mainWindow.webContents.send("editor:tool-request", { requestId, toolName, toolInput })
   })
 
+const sendPyodideRequest = (code: string, options?: { globals?: Record<string, unknown> }) =>
+  new Promise<PyodideExecuteResult>((resolve, reject) => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      reject(new Error("Main window is not available"))
+      return
+    }
+
+    const requestId = `pyodide-${++pyodideRequestCounter}-${Date.now()}`
+    const timeout = setTimeout(() => {
+      pendingPyodideRequests.delete(requestId)
+      reject(new Error("Pyodide execution timed out"))
+    }, 120_000)
+
+    pendingPyodideRequests.set(requestId, {
+      resolve: (result) => {
+        clearTimeout(timeout)
+        resolve(result)
+      },
+      reject: (error) => {
+        clearTimeout(timeout)
+        reject(error)
+      },
+      timeout,
+    })
+
+    mainWindow.webContents.send("pyodide:execute", { requestId, code, globals: options?.globals })
+  })
+
 const createMenu = () => {
   const template = [
     ...(process.platform === "darwin"
@@ -165,9 +209,9 @@ const createMenu = () => {
           click: () => sendMenuCommand("settings.open"),
         },
         {
-          label: "Anthropic Docs",
+          label: "Renvel AI Docs",
           click: () => {
-            void shell.openExternal("https://docs.anthropic.com")
+            void shell.openExternal("https://renvel.ai")
           },
         },
       ],
@@ -180,19 +224,11 @@ const createMenu = () => {
 const ensureLocalService = async () => {
   if (localService) return localService
 
-  authStore ??= createProviderAuthStore({
-    userDataPath: app.getPath("userData"),
-    crypto: {
-      isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
-      encryptString: (value) => safeStorage.encryptString(value).toString("base64"),
-      decryptString: (value) => safeStorage.decryptString(Buffer.from(value, "base64")),
-    },
-  })
-
   localService = await createLocalService({
     userDataPath: app.getPath("userData"),
-    authStore,
+    packaged: app.isPackaged,
     sendEditorToolRequest,
+    sendPyodideRequest,
   })
 
   return localService
@@ -333,6 +369,13 @@ ipcMain.handle("editor:tool-result", async (_event: unknown, payload: { requestI
   pending.resolve(payload.result)
 })
 
+ipcMain.handle("pyodide:execute-result", async (_event: unknown, payload: { requestId: string; result: PyodideExecuteResult }) => {
+  const pending = pendingPyodideRequests.get(payload.requestId)
+  if (!pending) return
+  pendingPyodideRequests.delete(payload.requestId)
+  pending.resolve(payload.result)
+})
+
 ipcMain.handle("editor:state/update", async (_event: unknown, payload: ActiveEditorState) => {
   await localService?.setEditorState(payload)
 })
@@ -360,6 +403,11 @@ app.on("window-all-closed", () => {
 app.on("before-quit", async () => {
   for (const [requestId, pending] of pendingEditorToolRequests) {
     pendingEditorToolRequests.delete(requestId)
+    clearTimeout(pending.timeout)
+    pending.reject(new Error("Application is quitting"))
+  }
+  for (const [requestId, pending] of pendingPyodideRequests) {
+    pendingPyodideRequests.delete(requestId)
     clearTimeout(pending.timeout)
     pending.reject(new Error("Application is quitting"))
   }

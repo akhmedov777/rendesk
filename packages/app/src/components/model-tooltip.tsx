@@ -28,7 +28,7 @@ export const ModelTooltip: Component<{ model: ModelInfo; latest?: boolean; free?
   const sourceName = (model: ModelInfo) => {
     const value = `${model.id} ${model.name}`.toLowerCase()
 
-    if (/claude|anthropic/.test(value)) return language.t("model.provider.anthropic")
+    if (/claude|anthropic|renvel/.test(value)) return language.t("model.provider.renvel")
     if (/gpt|o[1-4]|codex|openai/.test(value)) return language.t("model.provider.openai")
     if (/gemini|palm|bard|google/.test(value)) return language.t("model.provider.google")
     if (/grok|xai/.test(value)) return language.t("model.provider.xai")

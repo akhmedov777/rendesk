@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { buildOnlyOfficeConfig, getEditorDocumentType, isOnlyOfficeExtension, signEditorJwt, verifyEditorJwt } from "./config"
+import { getEditorDocumentType, isOnlyOfficeExtension, ONLYOFFICE_SUPPORTED_EXTENSIONS } from "./config"
 
 describe("onlyoffice config helpers", () => {
   test("recognizes supported extensions", () => {
@@ -7,38 +7,33 @@ describe("onlyoffice config helpers", () => {
     expect(isOnlyOfficeExtension(".xlsx")).toBe(true)
     expect(isOnlyOfficeExtension("pdf")).toBe(true)
     expect(isOnlyOfficeExtension("txt")).toBe(false)
+    expect(isOnlyOfficeExtension("png")).toBe(false)
+  })
+
+  test("maps extensions to document types", () => {
+    expect(getEditorDocumentType("docx")).toBe("word")
+    expect(getEditorDocumentType("xlsx")).toBe("cell")
     expect(getEditorDocumentType("pptx")).toBe("slide")
+    expect(getEditorDocumentType("pdf")).toBe("pdf")
+    expect(getEditorDocumentType("csv")).toBe("cell")
+    expect(getEditorDocumentType("odt")).toBe("word")
+    expect(getEditorDocumentType("unknown")).toBe("unknown")
   })
 
-  test("signs and verifies JWT payloads", () => {
-    const token = signEditorJwt({ filePath: "/tmp/report.docx", action: "download" }, "secret")
-    expect(verifyEditorJwt(token, "secret")).toMatchObject({
-      filePath: "/tmp/report.docx",
-      action: "download",
-    })
-    expect(verifyEditorJwt(`${token}x`, "secret")).toBeNull()
+  test("strips leading dot from extension", () => {
+    expect(getEditorDocumentType(".docx")).toBe("word")
+    expect(isOnlyOfficeExtension(".pdf")).toBe(true)
   })
 
-  test("builds view-mode configs for pdf files", () => {
-    const config = buildOnlyOfficeConfig({
-      filePath: "/tmp/report.pdf",
-      fileName: "report.pdf",
-      fileExt: "pdf",
-      fileMtimeMs: 1_717_171,
-      baseUrl: "https://callback.example.com",
-      jwtSecret: "secret",
-    }) as Record<string, any>
+  test("is case insensitive", () => {
+    expect(isOnlyOfficeExtension("DOCX")).toBe(true)
+    expect(getEditorDocumentType("PDF")).toBe("pdf")
+  })
 
-    expect(config.documentType).toBe("pdf")
-    expect(config.document).toMatchObject({
-      fileType: "pdf",
-      title: "report.pdf",
-    })
-    expect(config.document.url).toContain("https://callback.example.com/api/editor/download")
-    expect(config.editorConfig.mode).toBe("view")
-    expect(config.editorConfig.callbackUrl).toContain(
-      "https://callback.example.com/api/editor/callback",
-    )
-    expect(typeof config.token).toBe("string")
+  test("ONLYOFFICE_SUPPORTED_EXTENSIONS contains all expected formats", () => {
+    const expected = ["doc", "docx", "odt", "rtf", "xls", "xlsx", "ods", "csv", "ppt", "pptx", "odp", "pdf"]
+    for (const ext of expected) {
+      expect(ONLYOFFICE_SUPPORTED_EXTENSIONS.has(ext)).toBe(true)
+    }
   })
 })

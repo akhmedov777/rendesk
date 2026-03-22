@@ -10,7 +10,6 @@ import { Tag } from "@rendesk/ui/tag"
 import { Dialog } from "@rendesk/ui/dialog"
 import { List } from "@rendesk/ui/list"
 import { Tooltip } from "@rendesk/ui/tooltip"
-import { DialogSelectProvider } from "./dialog-select-provider"
 import { DialogManageModels } from "./dialog-manage-models"
 import { ModelTooltip } from "./model-tooltip"
 import { useLanguage } from "@/context/language"
@@ -106,10 +105,6 @@ export function ModelSelectorPopover(props: {
     dialog.show(() => <DialogManageModels />)
   }
 
-  const handleConnectProvider = () => {
-    setStore("open", false)
-    dialog.show(() => <DialogSelectProvider />)
-  }
   const language = useLanguage()
 
   return (
@@ -155,16 +150,6 @@ export function ModelSelectorPopover(props: {
             class="p-1"
             action={
               <div class="flex items-center gap-1">
-                <Tooltip placement="top" value={language.t("command.provider.connect")}>
-                  <IconButton
-                    icon="plus-small"
-                    variant="ghost"
-                    iconSize="normal"
-                    class="size-6"
-                    aria-label={language.t("command.provider.connect")}
-                    onClick={handleConnectProvider}
-                  />
-                </Tooltip>
                 <Tooltip placement="top" value={language.t("dialog.model.manage")}>
                   <IconButton
                     icon="sliders"
@@ -189,19 +174,7 @@ export const DialogSelectModel: Component<{ provider?: string }> = (props) => {
   const language = useLanguage()
 
   return (
-    <Dialog
-      title={language.t("dialog.model.select.title")}
-      action={
-        <Button
-          class="h-7 -my-1 text-14-medium"
-          icon="plus-small"
-          tabIndex={-1}
-          onClick={() => dialog.show(() => <DialogSelectProvider />)}
-        >
-          {language.t("command.provider.connect")}
-        </Button>
-      }
-    >
+    <Dialog title={language.t("dialog.model.select.title")}>
       <ModelList provider={props.provider} onSelect={() => dialog.close()} />
       <Button
         variant="ghost"

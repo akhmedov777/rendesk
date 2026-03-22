@@ -1,11 +1,9 @@
 import { Button } from "@rendesk/ui/button"
 import { useCommand, usePlatform } from "@rendesk/app"
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js"
-import type { EditorDocumentType, EditorTransportMode, SpreadsheetSelection } from "../electron/onlyoffice/types"
+import type { EditorDocumentType, SpreadsheetSelection } from "../electron/onlyoffice/types"
 import { createEditorRecord, useDesktopEditor } from "../editor/provider"
 import type { DocumentHeading, EditorController, FormField } from "../editor/types"
-import { getOnlyOfficeLoadTimeoutMs } from "../onlyoffice/load-policy"
-import { ensureOnlyOfficeApiScript } from "../onlyoffice/script-loader"
 
 type OnlyOfficeEditorProps = {
   editorID: string
@@ -33,46 +31,27 @@ type OOEditorInstance = {
   destroyEditor: () => void
 }
 
-type OOEditorConfig = Record<string, unknown> & {
-  documentType?: EditorDocumentType
-  events?: Record<string, (event?: unknown) => void>
-}
-
-declare global {
-  interface Window {
-    DocsAPI?: {
-      DocEditor: new (elementID: string, config: OOEditorConfig) => OOEditorInstance
-    }
-  }
-}
-
-function normalizeDocumentType(value: unknown, fallback: EditorDocumentType): EditorDocumentType {
-  return value === "word" || value === "cell" || value === "slide" || value === "pdf" ? value : fallback
-}
-
-function normalizeTransportMode(value: unknown): EditorTransportMode {
-  return value === "manual" || value === "auto-tunnel" ? value : "local"
-}
+const EDITOR_LOAD_TIMEOUT_MS = 15_000
 
 export function OnlyOfficeEditor(props: OnlyOfficeEditorProps) {
   const platform = usePlatform()
   const command = useCommand()
   const editorBridge = useDesktopEditor()
   const [isLoading, setIsLoading] = createSignal(true)
+  const [isReloadingDoc, setIsReloadingDoc] = createSignal(false)
   const [error, setError] = createSignal<EditorErrorState | null>(null)
   const [reloadNonce, setReloadNonce] = createSignal(0)
 
-  let editorInstance: OOEditorInstance | null = null
   let connector: OOConnector | null = null
+  let editorInstance: OOEditorInstance | null = null
   let documentType = props.initialDocumentType
   let selectionInterval: ReturnType<typeof setInterval> | null = null
   let readyTimeout: ReturnType<typeof setTimeout> | null = null
-  let containerElement: HTMLDivElement | undefined
-  let iframeObserver: MutationObserver | null = null
+  let iframeRef: HTMLIFrameElement | null = null
   let fileWatchInterval: ReturnType<typeof setInterval> | null = null
   let knownMtimeMs: number | null = null
-
-  const containerID = `onlyoffice-${props.editorID.replace(/[^a-zA-Z0-9_-]/g, "-")}`
+  let sseSource: EventSource | null = null
+  let isReloading = false
 
   const clearReadyTimeout = () => {
     if (!readyTimeout) return
@@ -86,45 +65,22 @@ export function OnlyOfficeEditor(props: OnlyOfficeEditorProps) {
     selectionInterval = null
   }
 
-  const clearIframeObserver = () => {
-    if (!iframeObserver) return
-    iframeObserver.disconnect()
-    iframeObserver = null
-  }
-
   const clearFileWatchInterval = () => {
     if (!fileWatchInterval) return
     clearInterval(fileWatchInterval)
     fileWatchInterval = null
   }
 
-  const dismissLoading = () => {
-    clearReadyTimeout()
-    clearIframeObserver()
-    setIsLoading(false)
+  const clearSseSource = () => {
+    if (!sseSource) return
+    sseSource.close()
+    sseSource = null
   }
 
-  const attachIframeReadyFallback = () => {
-    clearIframeObserver()
-    if (!containerElement) return
-
-    const tryDismissFromIframe = () => {
-      if (!containerElement?.querySelector("iframe")) return false
-      dismissLoading()
-      return true
-    }
-
-    if (tryDismissFromIframe()) return
-
-    iframeObserver = new MutationObserver(() => {
-      if (tryDismissFromIframe()) {
-        clearIframeObserver()
-      }
-    })
-    iframeObserver.observe(containerElement, {
-      childList: true,
-      subtree: true,
-    })
+  const dismissLoading = () => {
+    clearReadyTimeout()
+    setIsLoading(false)
+    setIsReloadingDoc(false)
   }
 
   const callConnectorMethod = <T,>(method: string, args: unknown[] = []) =>
@@ -492,18 +448,12 @@ export function OnlyOfficeEditor(props: OnlyOfficeEditorProps) {
       const resetEditor = () => {
         clearReadyTimeout()
         clearSelectionInterval()
-        clearIframeObserver()
         clearFileWatchInterval()
+        clearSseSource()
         knownMtimeMs = null
+        isReloading = false
         connector = null
-        if (editorInstance) {
-          try {
-            editorInstance.destroyEditor()
-          } catch {
-            // Ignore editor shutdown errors.
-          }
-          editorInstance = null
-        }
+        editorInstance = null
         editorBridge.updateEditor(props.editorID, {
           ready: false,
           modified: false,
@@ -529,6 +479,57 @@ export function OnlyOfficeEditor(props: OnlyOfficeEditorProps) {
         })
       }
 
+      const grabConnector = () => {
+        if (!iframeRef?.contentWindow) return false
+        try {
+          const iframeWindow = iframeRef.contentWindow as typeof window & { editorInstance?: OOEditorInstance }
+          const inst = iframeWindow.editorInstance
+          if (!inst || typeof inst.createConnector !== "function") return false
+          editorInstance = inst
+          connector = inst.createConnector()
+          return Boolean(connector)
+        } catch {
+          return false
+        }
+      }
+
+      const onEditorReady = () => {
+        dismissLoading()
+        if (!grabConnector()) {
+          // Connector not available — try again after a short delay
+          setTimeout(() => {
+            grabConnector()
+            editorBridge.updateEditor(props.editorID, {
+              documentType,
+              ready: Boolean(connector),
+              modified: false,
+            })
+            if (connector) {
+              void syncSelection()
+              clearSelectionInterval()
+              selectionInterval = setInterval(() => {
+                void syncSelection()
+              }, 700)
+            }
+          }, 500)
+          return
+        }
+
+        editorBridge.updateEditor(props.editorID, {
+          documentType,
+          ready: Boolean(connector),
+          modified: false,
+        })
+
+        if (!connector) return
+
+        void syncSelection()
+        clearSelectionInterval()
+        selectionInterval = setInterval(() => {
+          void syncSelection()
+        }, 700)
+      }
+
       const init = async () => {
         resetEditor()
         setError(null)
@@ -541,98 +542,48 @@ export function OnlyOfficeEditor(props: OnlyOfficeEditorProps) {
         }
 
         try {
-          const response = await (platform.fetch ?? window.fetch)(
-            `${platform.serviceUrl}/api/editor/config?filePath=${encodeURIComponent(props.filePath)}`,
-          )
-          const payload = await response.json().catch(() => ({}))
-          if (!response.ok) {
-            throw Object.assign(
-              new Error(typeof payload.error === "string" ? payload.error : "Failed to load editor"),
-              {
-                code: typeof payload.code === "string" ? payload.code : undefined,
-                details: typeof payload.details === "string" ? payload.details : undefined,
-              },
-            )
-          }
+          // Listen for messages from the iframe
+          const messageHandler = (event: MessageEvent) => {
+            if (disposed) return
+            const data = event.data
+            if (!data || typeof data.type !== "string") return
 
-          if (disposed) return
-
-          const docServerUrl = String(payload.docServerUrl ?? "").replace(/\/+$/, "")
-          const config = (payload.config ?? {}) as OOEditorConfig
-          documentType = normalizeDocumentType(config.documentType, props.initialDocumentType)
-          const transportMode = normalizeTransportMode(payload.transportMode)
-          const documentSize =
-            typeof payload.documentSize === "number" && Number.isFinite(payload.documentSize) ? payload.documentSize : 0
-
-          await ensureOnlyOfficeApiScript(docServerUrl)
-          if (disposed) return
-          if (!window.DocsAPI?.DocEditor) {
-            throw new Error("OnlyOffice API not available")
-          }
-
-          const editorConfig: OOEditorConfig = {
-            ...config,
-            events: {
-              onAppReady: () => {
-                // OnlyOffice shows its own loading UI inside the iframe once the app shell is mounted.
-                dismissLoading()
-              },
-              onDocumentReady: () => {
-                dismissLoading()
-
-                try {
-                  connector = typeof editorInstance?.createConnector === "function" ? editorInstance.createConnector() : null
-                } catch (error) {
-                  connector = null
-                  console.warn("[OnlyOffice] Connector unavailable:", error)
+            switch (data.type) {
+              case "editor:ready":
+              case "editor:app-ready":
+                onEditorReady()
+                break
+              case "editor:state-change":
+                if (typeof data.data?.modified === "boolean") {
+                  editorBridge.updateEditor(props.editorID, { modified: data.data.modified })
                 }
-
-                editorBridge.updateEditor(props.editorID, {
-                  documentType,
-                  ready: Boolean(connector),
-                  modified: false,
-                })
-
-                if (!connector) return
-
-                void syncSelection()
-                clearSelectionInterval()
-                selectionInterval = setInterval(() => {
-                  void syncSelection()
-                }, 700)
-              },
-              onDocumentStateChange: (event) => {
-                const modified =
-                  typeof (event as { data?: unknown })?.data === "boolean"
-                    ? Boolean((event as { data?: unknown }).data)
-                    : false
-                editorBridge.updateEditor(props.editorID, { modified })
-              },
-              onError: (event) => {
-                const data = (event as { data?: { errorDescription?: string } })?.data
+                break
+              case "editor:error":
                 clearReadyTimeout()
                 clearSelectionInterval()
                 setError({
-                  message: data?.errorDescription || "Editor error",
+                  message: data.data?.error || "Editor error",
+                  code: typeof data.data?.code === "string" ? data.data.code : undefined,
+                  details: typeof data.data?.details === "string" ? data.data.details : undefined,
                 })
                 setIsLoading(false)
                 editorBridge.updateEditor(props.editorID, { ready: false })
-              },
-              onRequestClose: () => {
-                clearSelectionInterval()
-                editorBridge.updateEditor(props.editorID, { ready: false })
-              },
-            },
+                break
+              case "editor:saved":
+                editorBridge.updateEditor(props.editorID, { modified: false })
+                break
+            }
           }
 
-          editorInstance = new window.DocsAPI.DocEditor(containerID, editorConfig)
-          attachIframeReadyFallback()
+          window.addEventListener("message", messageHandler)
+          onCleanup(() => window.removeEventListener("message", messageHandler))
 
-          // Poll the file's modification time to detect external changes on disk.
-          // When the file is modified outside the editor, auto-reload.
-          clearFileWatchInterval()
+          if (disposed) return
+
+          // Detect external file changes via SSE (instant) + fallback polling (5s).
           const fetchFn = platform.fetch ?? window.fetch
           const mtimeUrl = `${platform.serviceUrl}/api/editor/file-mtime?filePath=${encodeURIComponent(props.filePath)}`
+
           fetchFn(mtimeUrl)
             .then((r) => r.json())
             .then((data: { mtimeMs?: number }) => {
@@ -640,6 +591,46 @@ export function OnlyOfficeEditor(props: OnlyOfficeEditorProps) {
               knownMtimeMs = data.mtimeMs ?? null
             })
             .catch(() => {})
+
+          const triggerReload = () => {
+            if (isReloading) return
+            isReloading = true
+            setIsReloadingDoc(true)
+            clearFileWatchInterval()
+            clearSseSource()
+            setReloadNonce((v) => v + 1)
+          }
+
+          // SSE-based instant file change detection from fs.watch in main process.
+          clearSseSource()
+          try {
+            const evtSource = new EventSource(`${platform.serviceUrl}/events`)
+            sseSource = evtSource
+            evtSource.onmessage = (event) => {
+              if (disposed) return
+              try {
+                const data = JSON.parse(event.data) as {
+                  payload?: { type?: string; properties?: { filePath?: string; mtimeMs?: number } }
+                }
+                if (
+                  data.payload?.type === "editor:file-changed" &&
+                  data.payload.properties?.filePath === props.filePath
+                ) {
+                  const newMtime = data.payload.properties.mtimeMs
+                  if (typeof newMtime === "number" && newMtime !== knownMtimeMs) {
+                    triggerReload()
+                  }
+                }
+              } catch {
+                // Ignore parse errors.
+              }
+            }
+          } catch {
+            // SSE unavailable — rely on polling fallback.
+          }
+
+          // Fallback mtime polling at 5s interval.
+          clearFileWatchInterval()
           fileWatchInterval = setInterval(async () => {
             if (disposed || knownMtimeMs === null) return
             try {
@@ -647,25 +638,23 @@ export function OnlyOfficeEditor(props: OnlyOfficeEditorProps) {
               const data = (await r.json()) as { mtimeMs?: number }
               if (disposed || typeof data.mtimeMs !== "number") return
               if (data.mtimeMs !== knownMtimeMs) {
-                clearFileWatchInterval()
-                setReloadNonce((v) => v + 1)
+                triggerReload()
               }
             } catch {
-              // Ignore fetch errors — the service may be temporarily unavailable.
+              // Ignore fetch errors.
             }
-          }, 2000)
+          }, 5000)
 
           readyTimeout = setTimeout(() => {
             if (disposed) return
             clearSelectionInterval()
             editorBridge.updateEditor(props.editorID, { ready: false })
             setError({
-              message:
-                "Editor is taking too long to load. The Document Server likely cannot reach desktop callback/download endpoints.",
+              message: "Editor is taking too long to load. The local x2t converter may have failed.",
               code: "EDITOR_LOAD_TIMEOUT",
             })
             setIsLoading(false)
-          }, getOnlyOfficeLoadTimeoutMs(transportMode, documentSize))
+          }, EDITOR_LOAD_TIMEOUT_MS)
         } catch (cause) {
           if (disposed) return
           const error = cause as Error & { code?: string; details?: string }
@@ -695,6 +684,11 @@ export function OnlyOfficeEditor(props: OnlyOfficeEditorProps) {
     command.trigger("settings.open")
   }
 
+  const editorUrl = () => {
+    if (!platform.serviceUrl) return ""
+    return `${platform.serviceUrl}/api/editor/open?filePath=${encodeURIComponent(props.filePath)}&serviceUrl=${encodeURIComponent(platform.serviceUrl)}`
+  }
+
   return (
     <div class="relative h-full min-h-0 w-full min-w-0 overflow-hidden bg-surface-base">
       <Show when={error()}>
@@ -707,7 +701,7 @@ export function OnlyOfficeEditor(props: OnlyOfficeEditorProps) {
                   <p class="text-12-regular text-text-weak">{details().details}</p>
                 </Show>
                 <p class="text-12-regular text-text-weak">
-                  Make sure the hosted OnlyOffice Document Server and the desktop callback endpoint are both reachable.
+                  Make sure the x2t converter and editor resources are properly installed.
                 </p>
               </div>
               <div class="flex items-center justify-center gap-2">
@@ -726,14 +720,19 @@ export function OnlyOfficeEditor(props: OnlyOfficeEditorProps) {
       <Show when={!error()}>
         <div class="relative h-full min-h-0 w-full min-w-0">
           <Show when={isLoading()}>
-            <div class="absolute inset-0 z-10 flex items-center justify-center bg-background-base/90">
+            <div class={`absolute inset-0 z-10 flex items-center justify-center ${isReloadingDoc() ? "bg-background-base/60" : "bg-background-base/90"}`}>
               <div class="flex flex-col items-center gap-3 text-text-weak">
                 <div class="h-8 w-8 animate-spin rounded-full border-2 border-border-weak-base border-t-text-strong" />
-                <span class="text-12-medium">Loading document editor…</span>
+                <span class="text-12-medium">{isReloadingDoc() ? "Reloading…" : "Loading document editor…"}</span>
               </div>
             </div>
           </Show>
-          <div id={containerID} ref={containerElement} class="h-full min-h-[480px] w-full min-w-0" />
+          <iframe
+            ref={(el) => { iframeRef = el }}
+            src={editorUrl()}
+            class="h-full min-h-[480px] w-full min-w-0 border-none"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+          />
         </div>
       </Show>
     </div>

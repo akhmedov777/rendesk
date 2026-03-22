@@ -1,6 +1,5 @@
 import { createMemo, For, Match, Switch } from "solid-js"
 import { Button } from "@rendesk/ui/button"
-import { Logo } from "@rendesk/ui/logo"
 import { useLayout } from "@/context/layout"
 import { useNavigate } from "@solidjs/router"
 import { base64Encode } from "@rendesk/util/encode"
@@ -59,8 +58,7 @@ export default function Home() {
 
   return (
     <div class="mx-auto mt-55 w-full md:w-auto px-4">
-      <Logo class="md:w-xl opacity-12" />
-      <div class="mt-4 mx-auto text-14-regular text-text-weak text-center">Local back office workspace</div>
+      <div class="mt-4 mx-auto text-14-medium text-text-weak text-center">Workspace</div>
       <Switch>
         <Match when={sync.data.project.length > 0}>
           <div class="mt-20 w-full flex flex-col gap-4">

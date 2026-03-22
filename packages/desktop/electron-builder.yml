@@ -29,17 +29,17 @@ dmg:
   title: Rendesk
   background: build/dmg-background.png
   icon: build/icon.icns
-  iconSize: 124
+  iconSize: 112
   writeUpdateInfo: false
   window:
     width: 680
     height: 440
   contents:
-    - x: 188
-      y: 224
+    - x: 184
+      y: 248
       type: file
-    - x: 492
-      y: 224
+    - x: 496
+      y: 248
       type: link
       path: /Applications
 win:
@@ -52,5 +52,22 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
+extraResources:
+  - from: resources/converter
+    to: resources/converter
+    filter:
+      - "**/*"
+  - from: resources/editors
+    to: resources/editors
+    filter:
+      - "**/*"
+  - from: resources/fonts
+    to: resources/fonts
+    filter:
+      - "**/*"
+  - from: resources/pyodide
+    to: resources/pyodide
+    filter:
+      - "**/*"
 extraMetadata:
   main: dist/electron/main.js

@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { assertManagedDesktopConfig, missingManagedDesktopConfigKeys } from "./managed-config.js"
 
 const currentDir = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(currentDir, "../../../../")
@@ -46,37 +47,20 @@ function applyEnv(entries: Record<string, string>) {
 }
 
 export async function bootstrapDesktopEnv(input: { packaged?: boolean } = {}) {
-  if (!input.packaged) {
+  const packaged = Boolean(input.packaged)
+
+  if (!packaged) {
     const envLocal = await fs.readFile(envLocalPath, "utf8").catch(() => "")
     applyEnv(parseEnvFile(envLocal))
   }
 
-  const anthropicApiKey = process.env.ANTHROPIC_API_KEY?.trim()
-  if (anthropicApiKey) {
-    process.env.ANTHROPIC_API_KEY = anthropicApiKey
-    return {
-      repoRoot,
-      envLocalPath,
-      anthropicApiKey,
-      source: "ANTHROPIC_API_KEY",
-    } as const
-  }
-
-  const compatibilityToken = process.env.ANTHROPIC_AUTH_TOKEN?.trim()
-  if (compatibilityToken) {
-    process.env.ANTHROPIC_API_KEY = compatibilityToken
-    return {
-      repoRoot,
-      envLocalPath,
-      anthropicApiKey: compatibilityToken,
-      source: "ANTHROPIC_AUTH_TOKEN",
-    } as const
-  }
+  const managed = assertManagedDesktopConfig({ packaged })
+  const missing = missingManagedDesktopConfigKeys(managed)
 
   return {
     repoRoot,
     envLocalPath,
-    anthropicApiKey: undefined,
-    source: undefined,
+    managed,
+    missing,
   } as const
 }

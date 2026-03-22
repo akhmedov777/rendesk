@@ -29,6 +29,16 @@ const bridge: BackofficeBridge = {
       ipcRenderer.removeListener("editor:tool-request", handler)
     }
   },
+  onPyodideExecute(callback) {
+    const handler = (_event: unknown, payload: { requestId: string; code: string; globals?: Record<string, unknown> }) => {
+      void callback(payload)
+    }
+    ipcRenderer.on("pyodide:execute", handler)
+    return () => {
+      ipcRenderer.removeListener("pyodide:execute", handler)
+    }
+  },
+  sendPyodideResult: (requestId, result) => ipcRenderer.invoke("pyodide:execute-result", { requestId, result }),
   onMenuCommand(callback) {
     const handler = (_event: unknown, id: string) => callback(id)
     ipcRenderer.on("backoffice:menu-command", handler)

@@ -32,5 +32,9 @@ export type BackofficeBridge = {
     callback: (payload: { requestId: string; toolName: string; toolInput: Record<string, unknown> }) => void | Promise<void>,
   ): () => void
   sendEditorToolResult(requestId: string, result: string): Promise<void>
+  onPyodideExecute(
+    callback: (payload: { requestId: string; code: string; globals?: Record<string, unknown> }) => void | Promise<void>,
+  ): () => void
+  sendPyodideResult(requestId: string, result: { success: boolean; result?: string; stdout: string; stderr: string; images: string[] }): Promise<void>
   onMenuCommand(callback: (id: string) => void): () => void
 }

@@ -1,0 +1,1487 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rendesk для Musaffo — Персональное предложение</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --bg: #060609;
+  --bg-card: #0c0c12;
+  --bg-elevated: #111118;
+  --border: #1a1a26;
+  --border-hover: #2a2a3a;
+  --text: #e4e4ee;
+  --text-2: #9494aa;
+  --text-3: #5a5a72;
+  --blue: #4f8fff;
+  --blue-bg: rgba(79, 143, 255, 0.10);
+  --blue-border: rgba(79, 143, 255, 0.25);
+  --red: #ff5068;
+  --red-bg: rgba(255, 80, 104, 0.10);
+  --red-border: rgba(255, 80, 104, 0.20);
+  --green: #34d890;
+  --green-bg: rgba(52, 216, 144, 0.10);
+  --green-border: rgba(52, 216, 144, 0.20);
+  --amber: #ffb740;
+  --amber-bg: rgba(255, 183, 64, 0.10);
+  --amber-border: rgba(255, 183, 64, 0.20);
+  --purple: #a78bfa;
+  --purple-bg: rgba(167, 139, 250, 0.10);
+  --teal: #2dd4bf;
+  --teal-bg: rgba(45, 212, 191, 0.10);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  overflow: hidden;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Outfit', sans-serif;
+}
+
+.slide {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 56px 80px;
+  opacity: 0;
+  transform: scale(0.98);
+  transition: all 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+  overflow-y: auto;
+}
+
+.slide.active {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+
+/* Grain */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 1;
+}
+
+.slide > * { position: relative; z-index: 2; }
+
+/* Top chrome */
+.chrome {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 32px;
+  z-index: 100;
+  background: rgba(6, 6, 9, 0.85);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.4px;
+}
+
+.brand em {
+  font-style: normal;
+  color: var(--blue);
+}
+
+.pager {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-3);
+  letter-spacing: 1px;
+}
+
+.bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--blue), var(--teal));
+  z-index: 100;
+  transition: width 0.4s ease;
+}
+
+/* Type */
+.label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--blue);
+  margin-bottom: 18px;
+  opacity: 0.85;
+}
+
+h1 {
+  font-size: clamp(36px, 4.5vw, 60px);
+  font-weight: 800;
+  line-height: 1.08;
+  letter-spacing: -1.5px;
+}
+
+h2 {
+  font-size: clamp(26px, 3vw, 42px);
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: -0.8px;
+  margin-bottom: 20px;
+}
+
+h3 { font-size: 17px; font-weight: 600; margin-bottom: 8px; }
+
+.sub {
+  font-size: clamp(15px, 1.6vw, 20px);
+  color: var(--text-2);
+  font-weight: 300;
+  line-height: 1.55;
+  max-width: 720px;
+}
+
+.sep {
+  width: 50px;
+  height: 3px;
+  background: var(--blue);
+  border-radius: 2px;
+  margin: 20px 0;
+  opacity: 0.5;
+}
+
+/* Big quote */
+.quote-block {
+  margin: 24px 0;
+  position: relative;
+  padding: 32px 36px;
+  background: var(--red-bg);
+  border: 1px solid var(--red-border);
+  border-radius: 16px;
+}
+
+.quote-mark {
+  position: absolute;
+  top: -8px;
+  left: 24px;
+  font-size: 48px;
+  color: var(--red);
+  line-height: 1;
+  opacity: 0.5;
+}
+
+.quote-text {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--red);
+}
+
+.quote-attr {
+  font-size: 14px;
+  color: var(--text-3);
+  margin-top: 12px;
+}
+
+/* Pain list */
+.pain-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 20px;
+}
+
+.pain-item {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 20px;
+}
+
+.pain-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+  background: var(--red-bg);
+}
+
+.pain-item h4 { font-size: 14px; font-weight: 600; margin-bottom: 3px; }
+.pain-item p { font-size: 12px; color: var(--text-2); line-height: 1.45; }
+
+/* Cost cards */
+.cost-strip {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.cost-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px 16px;
+  text-align: center;
+}
+
+.cost-card .ic { font-size: 24px; margin-bottom: 10px; }
+.cost-card .val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--red);
+  margin-bottom: 6px;
+  line-height: 1.3;
+}
+.cost-card .desc { font-size: 11px; color: var(--text-3); line-height: 1.35; }
+
+.cost-bottom {
+  margin-top: 20px;
+  padding: 18px 24px;
+  background: var(--red-bg);
+  border: 1px solid var(--red-border);
+  border-radius: 12px;
+  text-align: center;
+}
+
+.cost-bottom p {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--red);
+}
+
+/* Solution hero */
+.solution-hero {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 40px;
+  align-items: center;
+  margin-top: 20px;
+}
+
+.solution-visual {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 28px;
+  position: relative;
+  overflow: hidden;
+}
+
+.sol-window-bar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.sol-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--border-hover);
+}
+
+.sol-chat-msg {
+  padding: 10px 14px;
+  border-radius: 10px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  line-height: 1.45;
+  max-width: 90%;
+}
+
+.sol-chat-msg.user {
+  background: var(--blue-bg);
+  border: 1px solid var(--blue-border);
+  color: var(--blue);
+  margin-left: auto;
+  text-align: right;
+}
+
+.sol-chat-msg.bot {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+}
+
+.sol-chat-msg.bot strong { color: var(--text); }
+
+.solution-text h3 {
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.solution-text p {
+  font-size: 15px;
+  color: var(--text-2);
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+
+.solution-text .highlight {
+  display: inline-block;
+  padding: 8px 16px;
+  background: var(--blue-bg);
+  border: 1px solid var(--blue-border);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--blue);
+  font-weight: 500;
+  margin-top: 8px;
+}
+
+/* Scenario cards */
+.scenario-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 14px;
+  margin-top: 20px;
+}
+
+.scenario {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+}
+
+.scenario-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-3);
+  letter-spacing: 1px;
+  margin-bottom: 10px;
+}
+
+.scenario h4 {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--text);
+}
+
+.scenario p {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.5;
+  flex: 1;
+}
+
+.scenario .example-cmd {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: var(--blue-bg);
+  border-radius: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--blue);
+  line-height: 1.4;
+}
+
+.scenario .result {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--green);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Mobile section */
+.mobile-section {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 36px;
+  margin-top: 20px;
+  align-items: start;
+}
+
+.phone {
+  width: 220px;
+  height: 400px;
+  background: var(--bg-elevated);
+  border-radius: 32px;
+  border: 2px solid var(--border-hover);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+}
+
+.phone-top {
+  width: 80px;
+  height: 20px;
+  background: var(--bg);
+  border-radius: 0 0 12px 12px;
+  margin: -14px auto 10px;
+}
+
+.phone-content {
+  flex: 1;
+  background: var(--bg);
+  border-radius: 18px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.pk {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.pk-item {
+  background: var(--bg-card);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.pk-item .v {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.pk-item .v.up { color: var(--green); }
+.pk-item .v.down { color: var(--red); }
+.pk-item .v.warn { color: var(--amber); }
+.pk-item .l { font-size: 8px; color: var(--text-3); margin-top: 2px; }
+
+.phone-alert {
+  background: var(--amber-bg);
+  border: 1px solid var(--amber-border);
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 9px;
+  color: var(--amber);
+  line-height: 1.4;
+}
+
+.phone-mini-chat {
+  background: var(--bg-card);
+  border-radius: 8px;
+  padding: 8px;
+  flex: 1;
+}
+
+.pm { font-size: 9px; padding: 4px 8px; border-radius: 6px; margin-bottom: 4px; max-width: 85%; }
+.pm.u { background: var(--blue-bg); color: var(--blue); margin-left: auto; text-align: right; }
+.pm.a { background: var(--bg-elevated); color: var(--text-2); }
+
+.mob-features {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.mob-feat {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px;
+}
+
+.mob-feat .fi {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  margin-bottom: 10px;
+}
+
+.mob-feat h4 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+.mob-feat p { font-size: 12px; color: var(--text-2); line-height: 1.4; }
+
+/* Analytics */
+.analytics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.analytics-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 22px;
+}
+
+.analytics-card .ac-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.analytics-card .ac-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+.analytics-card h4 { font-size: 14px; font-weight: 600; }
+.analytics-card p { font-size: 12px; color: var(--text-2); line-height: 1.5; }
+
+.analytics-card .chart-mock {
+  margin-top: 14px;
+  height: 60px;
+  background: linear-gradient(180deg, var(--blue-bg) 0%, transparent 100%);
+  border-radius: 8px;
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  padding: 8px;
+}
+
+.chart-bar {
+  flex: 1;
+  border-radius: 3px 3px 0 0;
+  background: var(--blue);
+  opacity: 0.4;
+  min-height: 4px;
+}
+
+.analytics-card.dairy {
+  grid-column: 1 / -1;
+  background: linear-gradient(135deg, var(--amber-bg) 0%, var(--bg-card) 100%);
+  border-color: var(--amber-border);
+}
+
+/* ERP Journey */
+.erp-steps {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.erp-step {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+  position: relative;
+}
+
+.erp-step.current {
+  border-color: var(--blue-border);
+  background: linear-gradient(180deg, var(--blue-bg) 0%, var(--bg-card) 100%);
+}
+
+.erp-step .step-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 5px;
+  display: inline-block;
+  margin-bottom: 14px;
+}
+
+.erp-step:nth-child(1) .step-badge { background: var(--blue-bg); color: var(--blue); }
+.erp-step:nth-child(2) .step-badge { background: var(--purple-bg); color: var(--purple); }
+.erp-step:nth-child(3) .step-badge { background: var(--green-bg); color: var(--green); }
+
+.erp-step h4 { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+.erp-step .erp-price {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--blue);
+  margin-bottom: 12px;
+}
+
+.erp-step ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.erp-step ul li {
+  font-size: 12px;
+  color: var(--text-2);
+  padding-left: 16px;
+  position: relative;
+  line-height: 1.4;
+}
+
+.erp-step ul li::before {
+  content: '~';
+  position: absolute;
+  left: 0;
+  color: var(--text-3);
+}
+
+.erp-bottom {
+  margin-top: 20px;
+  text-align: center;
+  padding: 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.erp-bottom p { font-size: 14px; color: var(--text-2); }
+.erp-bottom strong { color: var(--text); }
+
+/* How it works */
+.how-steps {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 20px;
+  margin-top: 28px;
+}
+
+.how-step {
+  text-align: center;
+  position: relative;
+}
+
+.how-num {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--blue-bg);
+  border: 2px solid var(--blue-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--blue);
+  margin: 0 auto 16px;
+}
+
+.how-step h4 { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+.how-step p { font-size: 13px; color: var(--text-2); line-height: 1.5; }
+
+.how-step .time {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--green);
+  margin-top: 8px;
+}
+
+.no-need {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.no-need-item {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.no-need-item .nx {
+  color: var(--green);
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.no-need-item span { font-size: 13px; color: var(--text-2); }
+
+/* Pricing */
+.pricing-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-top: 24px;
+}
+
+.price-card {
+  border-radius: 18px;
+  padding: 32px;
+  position: relative;
+}
+
+.price-card.main {
+  background: linear-gradient(180deg, var(--blue-bg) 0%, var(--bg-card) 100%);
+  border: 1px solid var(--blue-border);
+}
+
+.price-card.enterprise {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+}
+
+.price-card .price-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 6px;
+  display: inline-block;
+  margin-bottom: 16px;
+}
+
+.price-card.main .price-badge { background: var(--blue-bg); color: var(--blue); }
+.price-card.enterprise .price-badge { background: var(--purple-bg); color: var(--purple); }
+
+.price-card h3 { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+
+.price-card .amount {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 28px;
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+
+.price-card.main .amount { color: var(--blue); }
+.price-card.enterprise .amount { color: var(--purple); }
+
+.price-card .amount-sub {
+  font-size: 13px;
+  color: var(--text-3);
+  margin-bottom: 18px;
+}
+
+.price-card ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.price-card ul li {
+  font-size: 14px;
+  color: var(--text-2);
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.price-card ul li::before {
+  content: '~';
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+
+.free-trial {
+  grid-column: 1 / -1;
+  margin-top: 4px;
+  padding: 20px;
+  background: var(--green-bg);
+  border: 1px solid var(--green-border);
+  border-radius: 14px;
+  text-align: center;
+}
+
+.free-trial p {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--green);
+}
+
+.free-trial .small {
+  font-size: 13px;
+  color: var(--text-2);
+  font-weight: 400;
+  margin-top: 4px;
+}
+
+/* Next steps */
+.steps-timeline {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  position: relative;
+}
+
+.steps-timeline::before {
+  content: '';
+  position: absolute;
+  left: 27px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--border);
+}
+
+.st-item {
+  display: flex;
+  gap: 20px;
+  padding: 14px 0;
+  position: relative;
+}
+
+.st-dot {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  z-index: 2;
+  font-size: 22px;
+}
+
+.st-item:nth-child(1) .st-dot { background: var(--blue-bg); border: 2px solid var(--blue-border); }
+.st-item:nth-child(2) .st-dot { background: var(--amber-bg); border: 2px solid var(--amber-border); }
+.st-item:nth-child(3) .st-dot { background: var(--green-bg); border: 2px solid var(--green-border); }
+.st-item:nth-child(4) .st-dot { background: var(--purple-bg); border: 2px solid rgba(167,139,250,0.25); }
+
+.st-content h4 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+.st-content p { font-size: 13px; color: var(--text-2); line-height: 1.5; }
+.st-content .when {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-3);
+  margin-top: 4px;
+}
+
+.cta-block {
+  margin-top: 32px;
+  text-align: center;
+  padding: 28px;
+  background: linear-gradient(135deg, var(--blue-bg) 0%, var(--bg-card) 100%);
+  border: 1px solid var(--blue-border);
+  border-radius: 16px;
+}
+
+.cta-block h3 {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  background: linear-gradient(135deg, var(--text) 0%, var(--blue) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.cta-block p { font-size: 14px; color: var(--text-2); }
+
+/* Nav */
+.nav-footer {
+  position: fixed;
+  bottom: 14px;
+  right: 28px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-3);
+  z-index: 100;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.key {
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+/* Glow */
+.glow {
+  position: absolute;
+  width: 500px;
+  height: 500px;
+  border-radius: 50%;
+  filter: blur(100px);
+  opacity: 0.06;
+  pointer-events: none;
+}
+
+.glow-bl { background: var(--blue); top: -150px; right: -100px; }
+.glow-rd { background: var(--red); bottom: -200px; left: -100px; }
+
+/* Musaffo-specific dairy callout */
+.dairy-callout {
+  padding: 14px 18px;
+  background: var(--amber-bg);
+  border: 1px solid var(--amber-border);
+  border-radius: 10px;
+  margin-top: 16px;
+}
+
+.dairy-callout p { font-size: 13px; color: var(--amber); line-height: 1.5; }
+
+@media print {
+  .slide { page-break-after: always; position: relative; height: 100vh; opacity: 1; transform: none; pointer-events: auto; }
+  .chrome, .bar, .nav-footer { display: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="chrome">
+  <div class="brand">REND<em>ESK</em> <span style="color: var(--text-3); font-weight: 400; margin-left: 8px;">для Musaffo</span></div>
+  <div class="pager" id="pager">01 / 11</div>
+</div>
+
+<div class="bar" id="bar"></div>
+
+<!-- SLIDE 1: Title -->
+<div class="slide active" data-i="0">
+  <div class="glow glow-bl"></div>
+  <div class="glow glow-rd" style="right: -100px; left: auto; top: auto; bottom: -100px;"></div>
+  <div class="label">Персональное предложение / Март 2026</div>
+  <h1>Rendesk</h1>
+  <h1 style="color: var(--blue); margin-top: -4px;">для Musaffo</h1>
+  <div class="sep"></div>
+  <p class="sub">Как перестать работать вслепую и начать принимать решения на основе данных — без замены 1С и без миллионных инвестиций</p>
+</div>
+
+<!-- SLIDE 2: Problem -->
+<div class="slide" data-i="1">
+  <div class="label">Проблема</div>
+  <h2>«Мы работаем вслепую»</h2>
+  <div class="quote-block">
+    <div class="quote-mark">"</div>
+    <div class="quote-text">Мы не знаем своих цифр</div>
+    <div class="quote-attr">— CFO, Musaffo.uz</div>
+  </div>
+  <div class="pain-grid">
+    <div class="pain-item">
+      <div class="pain-icon">📦</div>
+      <div>
+        <h4>Нет актуальных остатков</h4>
+        <p>Данные по складу устаревают быстрее, чем обновляются. Для молочки это критично — часы решают.</p>
+      </div>
+    </div>
+    <div class="pain-item">
+      <div class="pain-icon">📋</div>
+      <div>
+        <h4>Отчёты вручную, с опозданием</h4>
+        <p>Бухгалтер тратит дни на сведение данных из 1С в Excel. К моменту готовности отчёт уже неактуален.</p>
+      </div>
+    </div>
+    <div class="pain-item">
+      <div class="pain-icon">🎯</div>
+      <div>
+        <h4>Решения на интуиции</h4>
+        <p>Нет данных для принятия решений. Закупки, производство, продажи — всё на глазок.</p>
+      </div>
+    </div>
+    <div class="pain-item">
+      <div class="pain-icon">🥛</div>
+      <div>
+        <h4>Потери от просрочки</h4>
+        <p>Молочная продукция — скоропортящийся товар. Без точных данных — прямые убытки от списаний.</p>
+      </div>
+    </div>
+    <div class="pain-item" style="grid-column: 1 / -1;">
+      <div class="pain-icon">💸</div>
+      <div>
+        <h4>Нет прозрачности в закупках и расходах</h4>
+        <p>Невозможно быстро ответить: сколько потратили на сырьё? Какой поставщик дешевле? Где перерасход? Кто и сколько должен?</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 3: Cost of Problem -->
+<div class="slide" data-i="2">
+  <div class="label">Стоимость проблемы</div>
+  <h2>Что это стоит<br>вашему бизнесу</h2>
+  <div class="cost-strip">
+    <div class="cost-card">
+      <div class="ic">🗑</div>
+      <div class="val">Списания<br>продукции</div>
+      <div class="desc">Просрочка из-за отсутствия данных по остаткам и срокам</div>
+    </div>
+    <div class="cost-card">
+      <div class="ic">🧊</div>
+      <div class="val">Замороженный<br>капитал</div>
+      <div class="desc">Избыточные закупки без понимания реального расхода</div>
+    </div>
+    <div class="cost-card">
+      <div class="ic">⏰</div>
+      <div class="val">20-40 часов<br>в месяц</div>
+      <div class="desc">Время бухгалтера на ручную подготовку отчётов</div>
+    </div>
+    <div class="cost-card">
+      <div class="ic">📉</div>
+      <div class="val">Упущенные<br>возможности</div>
+      <div class="desc">Нет данных = нет оптимизации цен, закупок, маршрутов</div>
+    </div>
+    <div class="cost-card">
+      <div class="ic">❌</div>
+      <div class="val">Ошибки<br>ручного ввода</div>
+      <div class="desc">Накладные, пересортица, дублирование записей</div>
+    </div>
+  </div>
+  <div class="cost-bottom">
+    <p>Вы не знаете точно, сколько зарабатываете — и сколько теряете</p>
+  </div>
+</div>
+
+<!-- SLIDE 4: Solution -->
+<div class="slide" data-i="3">
+  <div class="label">Решение</div>
+  <h2>Rendesk — AI-ассистент<br>рядом с вашей 1С</h2>
+  <div class="solution-hero">
+    <div class="solution-visual">
+      <div class="sol-window-bar">
+        <div class="sol-dot"></div>
+        <div class="sol-dot"></div>
+        <div class="sol-dot"></div>
+      </div>
+      <div class="sol-chat-msg user">Покажи остатки молока на складе</div>
+      <div class="sol-chat-msg bot">
+        На складе <strong>2,340 литров</strong> молока 3.2%.<br>
+        При текущем расходе (~800л/день) этого хватит на <strong>2.9 дня</strong>.<br>
+        <span style="color: var(--amber);">Рекомендую разместить заказ до завтра.</span>
+      </div>
+      <div class="sol-chat-msg user">Сколько потратили на сырьё в феврале?</div>
+      <div class="sol-chat-msg bot">
+        Расходы на сырьё за февраль: <strong>847,200,000 сум</strong><br>
+        Рост на 12% к январю. Основной рост: молоко-сырьё (+18%).
+      </div>
+    </div>
+    <div class="solution-text">
+      <h3>Не заменяет 1С.<br>Не требует новых систем.</h3>
+      <p>Rendesk устанавливается на ваш компьютер рядом с 1С. Подключается к вашей базе данных. Все данные остаются в офисе.</p>
+      <p>Просто задайте вопрос на русском языке — получите ответ за 30 секунд. Из ваших реальных данных.</p>
+      <div class="highlight">Спросите на русском — получите ответ за 30 секунд</div>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 5: Scenarios for Musaffo -->
+<div class="slide" data-i="4">
+  <div class="label">Возможности</div>
+  <h2>Что Rendesk делает<br>для Musaffo</h2>
+  <div class="scenario-grid">
+    <div class="scenario">
+      <div class="scenario-num">01 / Финансы</div>
+      <h4>Финансовая аналитика</h4>
+      <p>P&L, движение денег, расходы по категориям — из данных 1С за секунды.</p>
+      <div class="example-cmd">"Покажи P&L за февраль"</div>
+      <div class="result">~ Отчёт за 30 секунд из данных 1С</div>
+    </div>
+    <div class="scenario">
+      <div class="scenario-num">02 / Склад</div>
+      <h4>Складской учёт</h4>
+      <p>Актуальные остатки + предупреждения о низких запасах. Критично для скоропортящихся товаров.</p>
+      <div class="example-cmd">"Какие остатки на складе?"</div>
+      <div class="result">~ Данные + алерты о минимумах</div>
+    </div>
+    <div class="scenario">
+      <div class="scenario-num">03 / Закупки</div>
+      <h4>Контроль закупок</h4>
+      <p>Расходы по поставщикам, категориям. Сравнение цен. Выявление перерасхода.</p>
+      <div class="example-cmd">"Сколько потратили на сырьё?"</div>
+      <div class="result">~ Разбивка по поставщикам</div>
+    </div>
+    <div class="scenario">
+      <div class="scenario-num">04 / Автоматизация</div>
+      <h4>Автоматические отчёты</h4>
+      <p>Ежедневный/еженедельный отчёт — на почту руководителю или в WhatsApp.</p>
+      <div class="example-cmd">"Каждый понедельник — отчёт за неделю"</div>
+      <div class="result">~ Автоматическая доставка</div>
+    </div>
+    <div class="scenario">
+      <div class="scenario-num">05 / Документы</div>
+      <h4>Создание документов</h4>
+      <p>Накладные, акты сверки, счета-фактуры. Excel и PDF — по запросу.</p>
+      <div class="example-cmd">"Сделай накладную для поставщика X"</div>
+      <div class="result">~ Excel/PDF на рабочем столе</div>
+    </div>
+    <div class="scenario">
+      <div class="scenario-num">06 / Прогнозы</div>
+      <h4>Прогноз спроса</h4>
+      <p>Анализ истории → рекомендации по закупкам. Учитывает сезонность молочки.</p>
+      <div class="example-cmd">"Спрогнозируй закупки на апрель"</div>
+      <div class="result">~ Рекомендации с учётом сезона</div>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 6: Mobile -->
+<div class="slide" data-i="5">
+  <div class="label">Мобильное приложение</div>
+  <h2>Руководитель<br>всегда в курсе</h2>
+  <div class="mobile-section">
+    <div class="phone">
+      <div class="phone-top"></div>
+      <div class="phone-content">
+        <div style="font-size: 10px; font-weight: 600;">Rendesk</div>
+        <div class="pk">
+          <div class="pk-item"><div class="v up">2.4B</div><div class="l">Выручка</div></div>
+          <div class="pk-item"><div class="v down">1.1B</div><div class="l">Расходы</div></div>
+          <div class="pk-item"><div class="v">847</div><div class="l">SKU</div></div>
+          <div class="pk-item"><div class="v warn">12</div><div class="l">Алерты</div></div>
+        </div>
+        <div class="phone-alert">Остатки молока 3.2% ниже минимума. Осталось на 2.9 дня.</div>
+        <div class="phone-mini-chat">
+          <div class="pm u">P&L за эту неделю</div>
+          <div class="pm a">Выручка: 584M. Расходы: 412M. Чистая: +172M (+8% к прошлой).</div>
+        </div>
+      </div>
+    </div>
+    <div class="mob-features">
+      <div class="mob-feat">
+        <div class="fi" style="background: var(--blue-bg);">📊</div>
+        <div>
+          <h4>KPI на главном экране</h4>
+          <p>Выручка, расходы, остатки, задолженности. Актуальные данные из 1С.</p>
+        </div>
+      </div>
+      <div class="mob-feat">
+        <div class="fi" style="background: var(--green-bg);">💬</div>
+        <div>
+          <h4>Чат с AI</h4>
+          <p>Спросите что угодно о бизнесе прямо с телефона. На русском языке.</p>
+        </div>
+      </div>
+      <div class="mob-feat">
+        <div class="fi" style="background: var(--amber-bg);">🎙</div>
+        <div>
+          <h4>Голосовой ввод</h4>
+          <p>Надиктуйте вопрос по дороге на работу. Получите ответ текстом.</p>
+        </div>
+      </div>
+      <div class="mob-feat">
+        <div class="fi" style="background: var(--red-bg);">🔔</div>
+        <div>
+          <h4>Push-уведомления</h4>
+          <p>«Остатки молока ниже минимума». «Еженедельный отчёт готов». «Дебиторка просрочена».</p>
+        </div>
+      </div>
+      <div class="mob-feat" style="grid-column: 1 / -1;">
+        <div class="fi" style="background: var(--purple-bg);">🔗</div>
+        <div>
+          <h4>Связка с десктопом</h4>
+          <p>Бухгалтер работает на компьютере в офисе — CFO проверяет данные с телефона из любой точки.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 7: Data Analytics -->
+<div class="slide" data-i="6">
+  <div class="label">Аналитика данных</div>
+  <h2>Rendesk анализирует<br>ваши данные</h2>
+  <div class="analytics-grid">
+    <div class="analytics-card">
+      <div class="ac-head">
+        <div class="ac-icon" style="background: var(--blue-bg);">📈</div>
+        <h4>Тренды продаж</h4>
+      </div>
+      <p>Продажи по продуктам и периодам. Что растёт, что падает, где точки роста.</p>
+      <div class="chart-mock">
+        <div class="chart-bar" style="height: 30%;"></div>
+        <div class="chart-bar" style="height: 45%;"></div>
+        <div class="chart-bar" style="height: 40%;"></div>
+        <div class="chart-bar" style="height: 60%;"></div>
+        <div class="chart-bar" style="height: 55%;"></div>
+        <div class="chart-bar" style="height: 70%;"></div>
+        <div class="chart-bar" style="height: 65%;"></div>
+        <div class="chart-bar" style="height: 80%; opacity: 0.8;"></div>
+      </div>
+    </div>
+    <div class="analytics-card">
+      <div class="ac-head">
+        <div class="ac-icon" style="background: var(--green-bg);">🎯</div>
+        <h4>ABC-анализ товаров</h4>
+      </div>
+      <p>Какие 20% товаров приносят 80% выручки. Фокус ресурсов на главном.</p>
+      <div class="chart-mock" style="background: linear-gradient(90deg, var(--green-bg) 20%, var(--amber-bg) 20% 50%, var(--red-bg) 50%);">
+        <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: space-around; font-size: 13px; font-weight: 600;">
+          <span style="color: var(--green);">A</span>
+          <span style="color: var(--amber);">B</span>
+          <span style="color: var(--red);">C</span>
+        </div>
+      </div>
+    </div>
+    <div class="analytics-card">
+      <div class="ac-head">
+        <div class="ac-icon" style="background: var(--purple-bg);">💰</div>
+        <h4>Маржинальность</h4>
+      </div>
+      <p>Прибыльность каждого продукта. Где зарабатываете, где теряете.</p>
+    </div>
+    <div class="analytics-card">
+      <div class="ac-head">
+        <div class="ac-icon" style="background: var(--red-bg);">📋</div>
+        <h4>Дебиторская задолженность</h4>
+      </div>
+      <p>Кто и сколько должен. Просроченные платежи. Возраст задолженности.</p>
+    </div>
+    <div class="analytics-card dairy">
+      <div class="ac-head">
+        <div class="ac-icon" style="background: var(--amber-bg);">🥛</div>
+        <h4>Оборачиваемость склада — критично для молочной продукции</h4>
+      </div>
+      <p>Скорость движения товаров по складу. Для скоропортящихся товаров каждый день на счету. AI предупреждает о рисках просрочки заранее и рекомендует оптимальные объёмы закупок с учётом сезонности.</p>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 8: ERP Path -->
+<div class="slide" data-i="7">
+  <div class="label">Путь развития</div>
+  <h2>От Rendesk к полноценному ERP</h2>
+  <p class="sub" style="margin-bottom: 4px;">Начните с малого — растите по мере готовности</p>
+  <div class="erp-steps">
+    <div class="erp-step current">
+      <div class="step-badge">Этап 1 — сейчас</div>
+      <h4>Rendesk</h4>
+      <div class="erp-price">$50–100/мес</div>
+      <ul>
+        <li>Мгновенная ценность</li>
+        <li>Работает с текущей 1С</li>
+        <li>Установка за 30 минут</li>
+        <li>Отчёты и аналитика</li>
+        <li>Мобильное приложение</li>
+      </ul>
+    </div>
+    <div class="erp-step">
+      <div class="step-badge">Этап 2</div>
+      <h4>Автоматизация процессов</h4>
+      <div class="erp-price" style="color: var(--purple);">$100–200/мес</div>
+      <ul>
+        <li>Автоматические отчёты</li>
+        <li>Алерты и уведомления</li>
+        <li>Шаблоны документов</li>
+        <li>Интеграция с WhatsApp</li>
+        <li>Расширенная аналитика</li>
+      </ul>
+    </div>
+    <div class="erp-step">
+      <div class="step-badge">Этап 3</div>
+      <h4>Полноценный ERP</h4>
+      <div class="erp-price" style="color: var(--green);">от $5,000</div>
+      <ul>
+        <li>WMS — складской учёт</li>
+        <li>Финансовый модуль</li>
+        <li>Автоматизация закупок</li>
+        <li>CRM — клиенты</li>
+        <li>Производство и контроль</li>
+        <li>Миграция из 1С</li>
+      </ul>
+    </div>
+  </div>
+  <div class="erp-bottom">
+    <p><strong>Не нужно сразу внедрять ERP.</strong> Начните с Rendesk — увидите ценность — решите, нужно ли больше.</p>
+  </div>
+</div>
+
+<!-- SLIDE 9: How It Works -->
+<div class="slide" data-i="8">
+  <div class="label">Как это работает</div>
+  <h2>Три шага —<br>и вы видите свои цифры</h2>
+  <div class="how-steps">
+    <div class="how-step">
+      <div class="how-num">1</div>
+      <h4>Установка Rendesk</h4>
+      <p>Ставим приложение на компьютер бухгалтера. Рядом с 1С. Ничего не меняем.</p>
+      <div class="time">30 минут</div>
+    </div>
+    <div class="how-step">
+      <div class="how-num">2</div>
+      <h4>Подключение к 1С</h4>
+      <p>Rendesk автоматически находит и подключается к вашей базе 1С. Данные не покидают компьютер.</p>
+      <div class="time">Автоматически</div>
+    </div>
+    <div class="how-step">
+      <div class="how-num">3</div>
+      <h4>Спрашиваете — получаете</h4>
+      <p>Задайте вопрос на русском языке. Получите ответ, отчёт или документ за секунды.</p>
+      <div class="time">30 секунд на ответ</div>
+    </div>
+  </div>
+  <div class="no-need">
+    <div class="no-need-item">
+      <div class="nx">~</div>
+      <span>Не нужно менять 1С</span>
+    </div>
+    <div class="no-need-item">
+      <div class="nx">~</div>
+      <span>Не нужно обучать месяцами</span>
+    </div>
+    <div class="no-need-item">
+      <div class="nx">~</div>
+      <span>Не нужно покупать серверы</span>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 10: Pricing -->
+<div class="slide" data-i="9">
+  <div class="label">Ценовое предложение</div>
+  <h2>Предложение для Musaffo</h2>
+  <div class="pricing-layout">
+    <div class="price-card main">
+      <div class="price-badge">Rendesk Desktop + Mobile</div>
+      <h3>AI-ассистент для бизнеса</h3>
+      <div class="amount">500,000 – 1,000,000 сум/мес</div>
+      <div class="amount-sub">~$40–80 в месяц</div>
+      <ul>
+        <li>AI-ассистент для бухгалтера</li>
+        <li>Подключение к вашей 1С</li>
+        <li>Создание отчётов и документов</li>
+        <li>Финансовая аналитика из данных 1С</li>
+        <li>Мобильное приложение для руководства</li>
+        <li>Голосовой ввод</li>
+        <li>Автоматические отчёты и алерты</li>
+        <li>Поддержка на русском языке</li>
+      </ul>
+    </div>
+    <div class="price-card enterprise">
+      <div class="price-badge">ERP Интеграция</div>
+      <h3>Полная цифровизация</h3>
+      <div class="amount">от 60,000,000 сум</div>
+      <div class="amount-sub">от ~$5,000 — проектная работа</div>
+      <ul>
+        <li>Внедрение полноценной ERP системы</li>
+        <li>WMS — складской учёт каждой единицы</li>
+        <li>Миграция данных из 1С</li>
+        <li>Финансовый модуль</li>
+        <li>Обучение персонала</li>
+        <li>Техническая поддержка 12 месяцев</li>
+      </ul>
+    </div>
+    <div class="free-trial">
+      <p>Первый месяц — бесплатно</p>
+      <div class="small">Покажем ценность до первого платежа. Без риска, без обязательств.</div>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 11: Next Steps -->
+<div class="slide" data-i="10">
+  <div class="glow glow-bl"></div>
+  <div class="label">Следующие шаги</div>
+  <h2>Как мы начинаем</h2>
+  <div class="steps-timeline">
+    <div class="st-item">
+      <div class="st-dot">💻</div>
+      <div class="st-content">
+        <h4>Установка и настройка Rendesk</h4>
+        <p>Ставим приложение на компьютеры вашей команды. Подключаем к 1С. Настраиваем под ваши задачи.</p>
+        <div class="when">Неделя 1</div>
+      </div>
+    </div>
+    <div class="st-item">
+      <div class="st-dot">🧪</div>
+      <div class="st-content">
+        <h4>Тестирование на реальных задачах</h4>
+        <p>Бухгалтер и CFO работают с Rendesk в реальных условиях. Мы собираем обратную связь и настраиваем.</p>
+        <div class="when">Недели 2–3</div>
+      </div>
+    </div>
+    <div class="st-item">
+      <div class="st-dot">📊</div>
+      <div class="st-content">
+        <h4>Оценка результатов</h4>
+        <p>Замеряем: сколько времени экономим, какие инсайты получили, что хотите добавить.</p>
+        <div class="when">Месяц 2</div>
+      </div>
+    </div>
+    <div class="st-item">
+      <div class="st-dot">🚀</div>
+      <div class="st-content">
+        <h4>Расширение и развитие</h4>
+        <p>Больше пользователей, больше автоматизаций. Обсуждение ERP интеграции при необходимости.</p>
+        <div class="when">Месяц 3+</div>
+      </div>
+    </div>
+  </div>
+  <div class="cta-block">
+    <h3>Давайте начнём</h3>
+    <p>Первый месяц бесплатно. Установка за 30 минут. Результат — в первый день.</p>
+    <div style="margin-top: 16px; font-size: 14px; color: var(--text-3);">
+      Rendesk &mdash; rendesk.app
+    </div>
+  </div>
+</div>
+
+</div>
+
+<div class="nav-footer">
+  <span class="key">&larr;</span>
+  <span class="key">&rarr;</span>
+  навигация
+</div>
+
+<script>
+const slides = document.querySelectorAll('.slide');
+const pager = document.getElementById('pager');
+const bar = document.getElementById('bar');
+let cur = 0;
+const N = slides.length;
+
+function go(n) {
+  if (n < 0 || n >= N) return;
+  slides[cur].classList.remove('active');
+  cur = n;
+  slides[cur].classList.add('active');
+  pager.textContent = String(cur + 1).padStart(2, '0') + ' / ' + String(N).padStart(2, '0');
+  bar.style.width = ((cur + 1) / N * 100) + '%';
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); go(cur + 1); }
+  if (e.key === 'ArrowLeft') { e.preventDefault(); go(cur - 1); }
+  if (e.key === 'Home') go(0);
+  if (e.key === 'End') go(N - 1);
+});
+
+document.addEventListener('click', e => {
+  const x = e.clientX / window.innerWidth;
+  if (x > 0.5) go(cur + 1); else go(cur - 1);
+});
+
+let tx = 0;
+document.addEventListener('touchstart', e => { tx = e.touches[0].clientX; });
+document.addEventListener('touchend', e => {
+  const d = tx - e.changedTouches[0].clientX;
+  if (Math.abs(d) > 50) { d > 0 ? go(cur + 1) : go(cur - 1); }
+});
+
+go(0);
+</script>
+</body>
+</html>

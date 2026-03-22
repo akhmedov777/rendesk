@@ -1,0 +1,1575 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rendesk — Стратегическая презентация</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --bg-deep: #050508;
+  --bg-card: #0d0d12;
+  --bg-card-hover: #13131a;
+  --border: #1a1a24;
+  --border-accent: #2a2a3a;
+  --text-primary: #e8e8f0;
+  --text-secondary: #8888a0;
+  --text-muted: #55556a;
+  --accent: #4f8fff;
+  --accent-dim: #2a4a8a;
+  --accent-glow: rgba(79, 143, 255, 0.15);
+  --red: #ff4f6a;
+  --red-dim: rgba(255, 79, 106, 0.12);
+  --green: #3edd9a;
+  --green-dim: rgba(62, 221, 154, 0.12);
+  --yellow: #ffc94f;
+  --yellow-dim: rgba(255, 201, 79, 0.12);
+  --purple: #a78bfa;
+  --purple-dim: rgba(167, 139, 250, 0.12);
+  --teal: #2dd4bf;
+  --teal-dim: rgba(45, 212, 191, 0.12);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  overflow: hidden;
+  height: 100%;
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  font-family: 'Outfit', -apple-system, sans-serif;
+}
+
+.deck {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+}
+
+.slide {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 60px 80px;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.5s cubic-bezier(0.4, 0, 0.2, 1), transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+  overflow-y: auto;
+}
+
+.slide.active {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+/* Noise overlay */
+.deck::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 1;
+}
+
+.slide > * { position: relative; z-index: 2; }
+
+/* Top bar */
+.topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 32px;
+  z-index: 100;
+  background: rgba(5, 5, 8, 0.8);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+}
+
+.logo {
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.5px;
+  color: var(--text-primary);
+}
+
+.logo span { color: var(--accent); }
+
+.slide-counter {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  letter-spacing: 1px;
+}
+
+/* Progress bar */
+.progress-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: var(--accent);
+  z-index: 100;
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Typography */
+.slide-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 20px;
+  opacity: 0.8;
+}
+
+h1 {
+  font-size: clamp(36px, 4.5vw, 64px);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -1.5px;
+  margin-bottom: 16px;
+}
+
+h2 {
+  font-size: clamp(28px, 3vw, 44px);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -1px;
+  margin-bottom: 24px;
+}
+
+h3 {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.3;
+  margin-bottom: 12px;
+}
+
+.subtitle {
+  font-size: clamp(16px, 1.8vw, 22px);
+  color: var(--text-secondary);
+  font-weight: 300;
+  line-height: 1.5;
+  max-width: 700px;
+}
+
+.big-statement {
+  font-size: clamp(24px, 3vw, 40px);
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.5px;
+  max-width: 900px;
+  background: linear-gradient(135deg, var(--text-primary) 0%, var(--accent) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Cards & Grids */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+.grid-4 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.grid-5 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  transition: border-color 0.3s;
+}
+
+.card:hover { border-color: var(--border-accent); }
+
+.card-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  margin-bottom: 14px;
+}
+
+.card-icon.blue { background: var(--accent-glow); }
+.card-icon.red { background: var(--red-dim); }
+.card-icon.green { background: var(--green-dim); }
+.card-icon.yellow { background: var(--yellow-dim); }
+.card-icon.purple { background: var(--purple-dim); }
+.card-icon.teal { background: var(--teal-dim); }
+
+.card h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.card p {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+/* List items */
+.strike-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.strike-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.strike-list li .icon {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  margin-top: 2px;
+}
+
+.strike-list li .icon.x {
+  background: var(--red-dim);
+  color: var(--red);
+}
+
+.strike-list li .icon.check {
+  background: var(--green-dim);
+  color: var(--green);
+}
+
+.strike-list li .icon.warn {
+  background: var(--yellow-dim);
+  color: var(--yellow);
+}
+
+/* Reality items */
+.reality-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 24px;
+}
+
+.reality-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 24px;
+}
+
+.reality-icon {
+  font-size: 28px;
+  flex-shrink: 0;
+}
+
+.reality-item h4 {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+
+.reality-item p {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* Journey */
+.journey {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin: 32px 0;
+}
+
+.journey-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.journey-step .bubble {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  background: var(--bg-card);
+  border: 2px solid var(--border);
+}
+
+.journey-step .label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-align: center;
+  max-width: 100px;
+}
+
+.journey-arrow {
+  flex: 1;
+  height: 2px;
+  background: var(--border);
+  position: relative;
+  min-width: 40px;
+}
+
+.journey-arrow::after {
+  content: '';
+  position: absolute;
+  right: -1px;
+  top: -4px;
+  border: 5px solid transparent;
+  border-left-color: var(--border);
+}
+
+.journey-step.highlight .bubble {
+  border-color: var(--accent);
+  background: var(--accent-glow);
+  box-shadow: 0 0 30px rgba(79, 143, 255, 0.2);
+}
+
+.journey-step.highlight .label {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.journey-step.question .bubble {
+  border-color: var(--yellow);
+  border-style: dashed;
+  background: var(--yellow-dim);
+}
+
+.journey-step.question .label { color: var(--yellow); }
+
+/* Capabilities */
+.capability-row {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+  margin-bottom: 12px;
+}
+
+.cap-number {
+  width: 44px;
+  height: 44px;
+  border-radius: 11px;
+  background: var(--accent-glow);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 16px;
+  font-weight: 600;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.cap-content {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 20px;
+  flex: 1;
+}
+
+.cap-content h4 {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.cap-content p {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.cap-content .example {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--accent);
+  margin-top: 6px;
+  opacity: 0.8;
+}
+
+/* TAM Map */
+.tam-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-top: 28px;
+}
+
+.tam-country {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  text-align: center;
+}
+
+.tam-country .flag { font-size: 36px; margin-bottom: 10px; }
+
+.tam-country .name {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.tam-country .count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 2px;
+}
+
+.tam-country .desc {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.tam-total {
+  grid-column: 1 / -1;
+  background: var(--accent-glow);
+  border: 1px solid var(--accent-dim);
+  border-radius: 12px;
+  padding: 20px;
+  text-align: center;
+}
+
+.tam-total .number {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 36px;
+  font-weight: 800;
+  color: var(--accent);
+}
+
+.tam-total .label {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+/* Mobile features */
+.mobile-grid {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 32px;
+  margin-top: 24px;
+  align-items: start;
+}
+
+.phone-mockup {
+  width: 260px;
+  height: 460px;
+  background: #111118;
+  border-radius: 36px;
+  border: 3px solid #2a2a3a;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+.phone-notch {
+  width: 100px;
+  height: 24px;
+  background: var(--bg-deep);
+  border-radius: 0 0 16px 16px;
+  margin: -16px auto 12px;
+}
+
+.phone-screen {
+  flex: 1;
+  background: var(--bg-deep);
+  border-radius: 20px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.phone-kpi {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.phone-kpi-item {
+  background: var(--bg-card);
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.phone-kpi-item .val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--green);
+}
+
+.phone-kpi-item .lbl {
+  font-size: 9px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.phone-chat {
+  background: var(--bg-card);
+  border-radius: 10px;
+  padding: 10px;
+  flex: 1;
+}
+
+.phone-msg {
+  font-size: 10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  margin-bottom: 6px;
+  max-width: 85%;
+}
+
+.phone-msg.user {
+  background: var(--accent-dim);
+  color: var(--accent);
+  margin-left: auto;
+  text-align: right;
+}
+
+.phone-msg.ai {
+  background: #1a1a24;
+  color: var(--text-secondary);
+}
+
+.mobile-features {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mobile-feature {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 20px;
+}
+
+.mobile-feature .mf-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.mobile-feature h4 { font-size: 14px; font-weight: 600; margin-bottom: 3px; }
+.mobile-feature p { font-size: 12px; color: var(--text-secondary); line-height: 1.4; }
+
+/* Revenue streams */
+.streams {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-top: 24px;
+}
+
+.stream {
+  border-radius: 16px;
+  padding: 28px;
+  position: relative;
+  overflow: hidden;
+}
+
+.stream.product {
+  background: linear-gradient(135deg, rgba(79, 143, 255, 0.08) 0%, rgba(79, 143, 255, 0.02) 100%);
+  border: 1px solid var(--accent-dim);
+}
+
+.stream.service {
+  background: linear-gradient(135deg, rgba(167, 139, 250, 0.08) 0%, rgba(167, 139, 250, 0.02) 100%);
+  border: 1px solid rgba(167, 139, 250, 0.3);
+}
+
+.stream-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 6px;
+  display: inline-block;
+  margin-bottom: 14px;
+}
+
+.stream.product .stream-badge { background: var(--accent-glow); color: var(--accent); }
+.stream.service .stream-badge { background: var(--purple-dim); color: var(--purple); }
+
+.stream h3 { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+
+.stream .price {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 26px;
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+
+.stream.product .price { color: var(--accent); }
+.stream.service .price { color: var(--purple); }
+
+.stream ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stream ul li {
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding-left: 18px;
+  position: relative;
+}
+
+.stream ul li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 7px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.stream.product ul li::before { background: var(--accent); }
+.stream.service ul li::before { background: var(--purple); }
+
+/* Tiers */
+.tiers {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.tier {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+}
+
+.tier.featured {
+  border-color: var(--accent-dim);
+  background: linear-gradient(180deg, rgba(79, 143, 255, 0.06) 0%, var(--bg-card) 100%);
+}
+
+.tier-icon {
+  font-size: 32px;
+  margin-bottom: 16px;
+}
+
+.tier h3 { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+
+.tier .tier-price {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+
+.tier .tier-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+  line-height: 1.4;
+}
+
+.tier ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+
+.tier ul li {
+  font-size: 13px;
+  color: var(--text-secondary);
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.tier ul li::before {
+  content: '~';
+  color: var(--accent);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+/* Advantages grid */
+.adv-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.adv-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  text-align: center;
+}
+
+.adv-item .adv-icon { font-size: 28px; margin-bottom: 10px; }
+.adv-item h4 { font-size: 13px; font-weight: 600; margin-bottom: 4px; line-height: 1.3; }
+.adv-item p { font-size: 11px; color: var(--text-muted); line-height: 1.4; }
+
+/* Timeline */
+.timeline {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  position: relative;
+}
+
+.timeline::before {
+  content: '';
+  position: absolute;
+  left: 23px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--border);
+}
+
+.tl-item {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  padding: 12px 0;
+  position: relative;
+}
+
+.tl-dot {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  font-weight: 600;
+  flex-shrink: 0;
+  z-index: 2;
+}
+
+.tl-item:nth-child(1) .tl-dot { background: var(--accent-glow); color: var(--accent); border: 2px solid var(--accent-dim); }
+.tl-item:nth-child(2) .tl-dot { background: var(--teal-dim); color: var(--teal); border: 2px solid rgba(45, 212, 191, 0.3); }
+.tl-item:nth-child(3) .tl-dot { background: var(--purple-dim); color: var(--purple); border: 2px solid rgba(167, 139, 250, 0.3); }
+.tl-item:nth-child(4) .tl-dot { background: var(--yellow-dim); color: var(--yellow); border: 2px solid rgba(255, 201, 79, 0.3); }
+.tl-item:nth-child(5) .tl-dot { background: var(--green-dim); color: var(--green); border: 2px solid rgba(62, 221, 154, 0.3); }
+.tl-item:nth-child(6) .tl-dot { background: var(--red-dim); color: var(--red); border: 2px solid rgba(255, 79, 106, 0.3); }
+.tl-item:nth-child(7) .tl-dot { background: var(--accent-glow); color: var(--accent); border: 2px solid var(--accent-dim); }
+
+.tl-content h4 { font-size: 15px; font-weight: 600; margin-bottom: 3px; }
+.tl-content p { font-size: 13px; color: var(--text-secondary); line-height: 1.4; }
+
+/* Closing */
+.closing-statement {
+  font-size: clamp(28px, 3.5vw, 48px);
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -1px;
+  max-width: 900px;
+  background: linear-gradient(135deg, var(--text-primary) 20%, var(--accent) 80%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Divider */
+.divider {
+  width: 60px;
+  height: 3px;
+  background: var(--accent);
+  border-radius: 2px;
+  margin: 20px 0;
+  opacity: 0.6;
+}
+
+/* Navigation hints */
+.nav-hint {
+  position: fixed;
+  bottom: 16px;
+  right: 32px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  z-index: 100;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.nav-key {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 10px;
+}
+
+/* Glow effect behind title slides */
+.glow-bg {
+  position: absolute;
+  width: 600px;
+  height: 600px;
+  border-radius: 50%;
+  filter: blur(120px);
+  opacity: 0.08;
+  pointer-events: none;
+}
+
+.glow-blue { background: var(--accent); top: -100px; right: -100px; }
+.glow-purple { background: var(--purple); bottom: -200px; left: -100px; }
+
+/* Blockquote */
+.blockquote {
+  border-left: 3px solid var(--accent);
+  padding-left: 20px;
+  margin: 16px 0;
+}
+
+.blockquote p {
+  font-size: 15px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  font-style: italic;
+}
+
+/* Why list */
+.why-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.why-list li {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  font-size: 15px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.why-list li .num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* Animated dots for slide 1 */
+.hero-grid {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle at 1px 1px, rgba(79, 143, 255, 0.06) 1px, transparent 0);
+  background-size: 40px 40px;
+  pointer-events: none;
+}
+
+.tag {
+  display: inline-block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  margin-right: 6px;
+}
+
+.tag.blue { background: var(--accent-glow); color: var(--accent); }
+.tag.green { background: var(--green-dim); color: var(--green); }
+.tag.red { background: var(--red-dim); color: var(--red); }
+
+/* Print */
+@media print {
+  .slide { page-break-after: always; position: relative; height: 100vh; opacity: 1; transform: none; pointer-events: auto; }
+  .topbar, .progress-bar, .nav-hint { display: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo">REND<span>ESK</span></div>
+  <div class="slide-counter" id="counter">01 / 13</div>
+</div>
+
+<div class="progress-bar" id="progress"></div>
+
+<div class="deck" id="deck">
+
+  <!-- SLIDE 1: Title -->
+  <div class="slide active" data-index="0">
+    <div class="hero-grid"></div>
+    <div class="glow-bg glow-blue"></div>
+    <div class="glow-bg glow-purple"></div>
+    <div class="slide-label">Стратегическая презентация / Март 2026</div>
+    <h1>Rendesk</h1>
+    <h1 style="color: var(--accent); margin-top: -8px;">AI-ассистент<br>для бизнеса</h1>
+    <div class="divider"></div>
+    <p class="subtitle">Первый AI-интерфейс к крупнейшей нецифровизированной бизнес-экосистеме Центральной Азии и СНГ</p>
+    <div style="margin-top: 32px; display: flex; gap: 8px;">
+      <span class="tag blue">Desktop</span>
+      <span class="tag blue">Mobile</span>
+      <span class="tag green">1C Integration</span>
+      <span class="tag green">AI-Powered</span>
+    </div>
+  </div>
+
+  <!-- SLIDE 2: Problem - Digital Reality -->
+  <div class="slide" data-index="1">
+    <div class="slide-label">Проблема</div>
+    <h2>Цифровая реальность<br>Узбекистана</h2>
+    <p class="subtitle" style="margin-bottom: 8px;">У бизнесов нет ERP. Нет облачных баз данных. Нет структурированных данных.</p>
+    <p style="font-size: 14px; color: var(--text-muted); margin-bottom: 4px;">Что есть на самом деле:</p>
+    <div class="reality-grid">
+      <div class="reality-item">
+        <div class="reality-icon">💾</div>
+        <div>
+          <h4>Пиратская 1С</h4>
+          <p>На компьютере бухгалтера. Без API. Без обновлений. Локальная база данных.</p>
+        </div>
+      </div>
+      <div class="reality-item">
+        <div class="reality-icon">📊</div>
+        <div>
+          <h4>Excel файлы</h4>
+          <p>Разбросаны по рабочим столам, USB-флешкам и папкам "Новая папка (3)"</p>
+        </div>
+      </div>
+      <div class="reality-item">
+        <div class="reality-icon">📄</div>
+        <div>
+          <h4>Бумага и устные инструкции</h4>
+          <p>Ключевые процессы передаются из уст в уста. Документооборот — бумажный.</p>
+        </div>
+      </div>
+      <div class="reality-item">
+        <div class="reality-icon">💬</div>
+        <div>
+          <h4>WhatsApp группы</h4>
+          <p>Основной канал деловой коммуникации. Заявки, отчёты, согласования — всё тут.</p>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top: 20px; padding: 16px 20px; background: var(--red-dim); border: 1px solid rgba(255,79,106,0.2); border-radius: 10px;">
+      <p style="font-size: 14px; color: var(--red);">Даже крупные компании как Musaffo (ведущий молочный завод страны) — работают вслепую. CFO: <em>"Мы не знаем своих цифр"</em></p>
+    </div>
+  </div>
+
+  <!-- SLIDE 3: Why Cloud SaaS Doesn't Work -->
+  <div class="slide" data-index="2">
+    <div class="slide-label">Контекст</div>
+    <h2>Почему облачный SaaS<br>не работает здесь</h2>
+    <ul class="strike-list">
+      <li>
+        <span class="icon x">✕</span>
+        <span>Нельзя «подключиться к PostgreSQL» — <strong style="color: var(--text-primary);">его просто нет</strong></span>
+      </li>
+      <li>
+        <span class="icon x">✕</span>
+        <span>Нельзя загрузить данные в облако — данные живут на локальной машине рядом с пиратской 1С</span>
+      </li>
+      <li>
+        <span class="icon x">✕</span>
+        <span>1С пиратская — нет API, нет облачной синхронизации, нет интеграций</span>
+      </li>
+      <li>
+        <span class="icon x">✕</span>
+        <span>ERP стоит <strong style="color: var(--text-primary);">$10,000+</strong> на внедрение — нет местных специалистов для настройки</span>
+      </li>
+      <li>
+        <span class="icon warn">!</span>
+        <span>Сотрудники сопротивляются переменам — <strong style="color: var(--yellow);">урок Binaar:</strong> продукт работал, adoption = 0</span>
+      </li>
+      <li>
+        <span class="icon warn">!</span>
+        <span>Бизнес «работает» на 1С + Excel + телефонные звонки. И менять это <strong style="color: var(--text-primary);">никто не готов</strong></span>
+      </li>
+    </ul>
+    <div class="blockquote" style="margin-top: 28px;">
+      <p>Весь SaaS-мир строит для компаний с облачной инфраструктурой. В Узбекистане этой инфраструктуры нет. Нужен другой подход.</p>
+    </div>
+  </div>
+
+  <!-- SLIDE 4: What is Rendesk -->
+  <div class="slide" data-index="3">
+    <div class="slide-label">Решение</div>
+    <p class="big-statement">Rendesk — это недостающий цифровой слой для бизнесов, которые пропустили эру ERP</p>
+    <div class="journey" style="margin-top: 40px;">
+      <div class="journey-step">
+        <div class="bubble">📄</div>
+        <div class="label">Бумага</div>
+      </div>
+      <div class="journey-arrow"></div>
+      <div class="journey-step">
+        <div class="bubble">💾</div>
+        <div class="label">Пиратская 1С</div>
+      </div>
+      <div class="journey-arrow"></div>
+      <div class="journey-step question">
+        <div class="bubble" style="font-size: 24px; font-weight: 800;">???</div>
+        <div class="label">Должно было быть ERP</div>
+      </div>
+      <div class="journey-arrow"></div>
+      <div class="journey-step highlight">
+        <div class="bubble" style="font-size: 18px; font-weight: 700;">R</div>
+        <div class="label">Rendesk</div>
+      </div>
+    </div>
+    <div style="margin-top: 32px; max-width: 800px;">
+      <p style="font-size: 17px; color: var(--text-secondary); line-height: 1.6;">
+        Rendesk <strong style="color: var(--text-primary);">не заменяет</strong> рабочий процесс. Он садится поверх того, что уже есть — 1С, Excel, WhatsApp — и делает это <strong style="color: var(--accent);">умнее</strong>.
+      </p>
+      <p style="font-size: 15px; color: var(--text-muted); margin-top: 12px; line-height: 1.5;">
+        Не нужно менять 1С. Не нужно учить сотрудников новой системе. Просто задайте вопрос — получите ответ.
+      </p>
+    </div>
+  </div>
+
+  <!-- SLIDE 5: Capabilities -->
+  <div class="slide" data-index="4">
+    <div class="slide-label">Возможности</div>
+    <h2>Что умеет Rendesk</h2>
+    <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 8px;">
+      <div class="capability-row">
+        <div class="cap-number">01</div>
+        <div class="cap-content">
+          <h4>Читает данные из 1С</h4>
+          <p>Подключается к локальной 1С через COM. Вытаскивает любые данные без SQL и без знания схемы базы.</p>
+          <div class="example">"Покажи остатки на складе на сегодня"</div>
+        </div>
+      </div>
+      <div class="capability-row">
+        <div class="cap-number">02</div>
+        <div class="cap-content">
+          <h4>Создаёт документы динамически</h4>
+          <p>Генерирует Excel, PDF, Word — любой формат. Отчёты, накладные, акты сверки — по запросу на русском языке.</p>
+          <div class="example">"Сделай отчёт по складу за март" → Excel на рабочем столе</div>
+        </div>
+      </div>
+      <div class="capability-row">
+        <div class="cap-number">03</div>
+        <div class="cap-content">
+          <h4>Записывает данные в 1С</h4>
+          <p>Может заносить данные обратно в 1С — накладные, проводки, документы. Без ручного ввода.</p>
+          <div class="example">"Добавь эти 47 накладных из Excel в 1С" → готово за минуту</div>
+        </div>
+      </div>
+      <div class="capability-row">
+        <div class="cap-number">04</div>
+        <div class="cap-content">
+          <h4>Отвечает на вопросы о бизнесе</h4>
+          <p>Запрашивает данные из 1С, считает, анализирует — и отвечает на русском языке.</p>
+          <div class="example">"Сколько потратили на сырьё в феврале?" → ответ за 30 секунд</div>
+        </div>
+      </div>
+      <div class="capability-row">
+        <div class="cap-number">05</div>
+        <div class="cap-content">
+          <h4>Адаптируется под каждый бизнес</h4>
+          <p>Нет предустановленных процессов. AI сам разбирается в структуре данных и подстраивается.</p>
+          <div class="example">Молочный завод, стройка, торговля — один продукт, разные задачи</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 6: Why Local -->
+  <div class="slide" data-index="5">
+    <div class="slide-label">Архитектура</div>
+    <h2>Почему это должно<br>работать локально</h2>
+    <p class="subtitle" style="margin-bottom: 24px;">Ценность — в локальном выполнении на машине, где живут данные</p>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-icon blue">💻</div>
+        <h3>1С работает только локально</h3>
+        <p>Пиратская 1С не имеет облачного API. Единственный способ получить данные — через COM-объекты на том же компьютере, где установлена 1С.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon red">🔒</div>
+        <h3>Данные не покидают офис</h3>
+        <p>Нет доверия к облаку. Вопросы с пиратским ПО. Клиенты не готовы отправлять бухгалтерские данные на чужие серверы.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon green">📁</div>
+        <h3>Доступ к файловой системе</h3>
+        <p>Excel файлы, накладные, акты — всё лежит на локальном диске. Rendesk видит те же папки, что и бухгалтер.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon yellow">⚡</div>
+        <h3>Мгновенный доступ к данным</h3>
+        <p>Нет задержек сети. Нет зависимости от интернета. Desktop-приложение работает рядом с 1С на том же компьютере.</p>
+      </div>
+    </div>
+    <div style="margin-top: 20px; padding: 16px 20px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; text-align: center;">
+      <p style="font-size: 15px; color: var(--text-secondary);">
+        Rendesk Desktop устанавливается на компьютер бухгалтера.<br>
+        <strong style="color: var(--text-primary);">Данные остаются в офисе. Всегда.</strong>
+      </p>
+    </div>
+  </div>
+
+  <!-- SLIDE 7: Market Opportunity -->
+  <div class="slide" data-index="6">
+    <div class="slide-label">Рынок</div>
+    <h2>Рыночная возможность</h2>
+    <p class="subtitle" style="margin-bottom: 4px;">~3 миллиона установок 1С по всему СНГ. Большинство — пиратские. Никто не строит AI поверх этого.</p>
+    <div class="why-list" style="margin-bottom: 20px;">
+      <li><span class="num">1</span> Юридически серая зона — крупные компании не полезут</li>
+      <li><span class="num">2</span> Требует локальное выполнение — облачные стартапы не могут</li>
+      <li><span class="num">3</span> Требует глубокое знание 1С — западные разработчики не знают</li>
+      <li><span class="num">4</span> Рынок кажется маленьким из Кремниевой Долины</li>
+    </div>
+    <div class="tam-grid">
+      <div class="tam-country">
+        <div class="flag">🇺🇿</div>
+        <div class="count">500K+</div>
+        <div class="name">Узбекистан</div>
+        <div class="desc">установок 1С</div>
+      </div>
+      <div class="tam-country">
+        <div class="flag">🇰🇿</div>
+        <div class="count">800K+</div>
+        <div class="name">Казахстан</div>
+        <div class="desc">установок 1С</div>
+      </div>
+      <div class="tam-country">
+        <div class="flag">🇰🇬</div>
+        <div class="count">200K+</div>
+        <div class="name">Кыргызстан</div>
+        <div class="desc">установок 1С</div>
+      </div>
+      <div class="tam-country">
+        <div class="flag">🇷🇺</div>
+        <div class="count">1.5M+</div>
+        <div class="name">Россия (SMB)</div>
+        <div class="desc">малый бизнес</div>
+      </div>
+      <div class="tam-total">
+        <div class="number">~3,000,000</div>
+        <div class="label">установок 1С в СНГ — и ни одного AI-решения, которое с ними работает</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 8: Mobile App -->
+  <div class="slide" data-index="7">
+    <div class="slide-label">Мобильное приложение</div>
+    <h2>Компаньон<br>для руководителя</h2>
+    <div class="mobile-grid">
+      <div class="phone-mockup">
+        <div class="phone-notch"></div>
+        <div class="phone-screen">
+          <div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">Rendesk</div>
+          <div class="phone-kpi">
+            <div class="phone-kpi-item">
+              <div class="val">₿ 2.4B</div>
+              <div class="lbl">Выручка</div>
+            </div>
+            <div class="phone-kpi-item">
+              <div class="val" style="color: var(--red);">₿ 1.1B</div>
+              <div class="lbl">Расходы</div>
+            </div>
+            <div class="phone-kpi-item">
+              <div class="val">847</div>
+              <div class="lbl">Товаров</div>
+            </div>
+            <div class="phone-kpi-item">
+              <div class="val" style="color: var(--yellow);">12</div>
+              <div class="lbl">Низкий запас</div>
+            </div>
+          </div>
+          <div class="phone-chat">
+            <div class="phone-msg user">Сколько на складе молока?</div>
+            <div class="phone-msg ai">На складе 2,340 литров. Это на 3 дня при текущем расходе. Рекомендую заказать.</div>
+            <div class="phone-msg user">Окей, создай заявку</div>
+          </div>
+        </div>
+      </div>
+      <div class="mobile-features">
+        <div class="mobile-feature">
+          <div class="mf-icon" style="background: var(--accent-glow);">💬</div>
+          <div>
+            <h4>Чат с AI на русском</h4>
+            <p>Спросите что угодно о бизнесе. AI подключён к данным вашего десктопа.</p>
+          </div>
+        </div>
+        <div class="mobile-feature">
+          <div class="mf-icon" style="background: var(--green-dim);">🎙</div>
+          <div>
+            <h4>Голосовой ввод</h4>
+            <p>Надиктуйте вопрос по дороге на работу. Получите ответ текстом или голосом.</p>
+          </div>
+        </div>
+        <div class="mobile-feature">
+          <div class="mf-icon" style="background: var(--yellow-dim);">🔔</div>
+          <div>
+            <h4>Уведомления и алерты</h4>
+            <p>«Остатки ниже минимума», «Отчёт за неделю готов», «Дебиторка просрочена»</p>
+          </div>
+        </div>
+        <div class="mobile-feature">
+          <div class="mf-icon" style="background: var(--purple-dim);">📊</div>
+          <div>
+            <h4>KPI на главном экране</h4>
+            <p>Выручка, расходы, остатки, задолженности — всегда актуально.</p>
+          </div>
+        </div>
+        <div class="mobile-feature">
+          <div class="mf-icon" style="background: var(--teal-dim);">🔗</div>
+          <div>
+            <h4>Связка с десктопом</h4>
+            <p>Бухгалтер работает на компьютере — директор проверяет с телефона.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 9: ERP Integration -->
+  <div class="slide" data-index="8">
+    <div class="slide-label">Направление #2</div>
+    <h2>ERP интеграция —<br>отдельное направление</h2>
+    <div class="streams">
+      <div class="stream product">
+        <div class="stream-badge">Массовый продукт</div>
+        <h3>Rendesk</h3>
+        <div class="price">$50–100/мес</div>
+        <ul>
+          <li>AI-ассистент поверх существующей 1С</li>
+          <li>Мгновенная ценность — установка за 30 минут</li>
+          <li>Не нужно менять процессы</li>
+          <li>Масштабируется на любой бизнес</li>
+          <li>Мобильное приложение включено</li>
+          <li>Рекуррентная выручка (MRR)</li>
+        </ul>
+      </div>
+      <div class="stream service">
+        <div class="stream-badge">Проектная работа</div>
+        <h3>ERP Внедрение</h3>
+        <div class="price">от $5,000</div>
+        <ul>
+          <li>Полноценный ERP (Odoo) для крупных клиентов</li>
+          <li>White-label — брендирование под клиента</li>
+          <li>Миграция данных из 1С</li>
+          <li>Складской учёт (WMS)</li>
+          <li>Финансовый модуль, закупки, CRM, HR</li>
+          <li>Обучение персонала и техподдержка</li>
+        </ul>
+      </div>
+    </div>
+    <div style="margin-top: 24px; text-align: center;">
+      <p style="font-size: 15px; color: var(--text-secondary);">
+        Начинаем с Rendesk → показываем ценность → клиент растёт → предлагаем полноценный ERP
+      </p>
+      <div style="display: flex; justify-content: center; gap: 20px; margin-top: 16px; align-items: center;">
+        <span class="tag blue">Rendesk $50/мес</span>
+        <span style="color: var(--text-muted);">→</span>
+        <span class="tag blue">Доверие + результат</span>
+        <span style="color: var(--text-muted);">→</span>
+        <span class="tag" style="background: var(--purple-dim); color: var(--purple);">ERP $5,000+</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 10: Full Lineup -->
+  <div class="slide" data-index="9">
+    <div class="slide-label">Продуктовая линейка</div>
+    <h2>Что мы предлагаем рынку</h2>
+    <div class="tiers">
+      <div class="tier">
+        <div class="tier-icon">💻</div>
+        <h3>Rendesk Desktop</h3>
+        <div class="tier-price">$50–100/мес</div>
+        <div class="tier-desc">AI-ассистент поверх 1С для любого бизнеса</div>
+        <ul>
+          <li>Чтение и запись данных 1С</li>
+          <li>Создание отчётов и документов</li>
+          <li>Ответы на вопросы о бизнесе</li>
+          <li>Работает с Excel, PDF, Word</li>
+          <li>Русский язык нативно</li>
+          <li>Голосовой ввод</li>
+        </ul>
+      </div>
+      <div class="tier featured">
+        <div class="tier-icon">📱</div>
+        <h3>Rendesk Mobile</h3>
+        <div class="tier-price">Включён</div>
+        <div class="tier-desc">Мобильный компаньон для руководителя</div>
+        <ul>
+          <li>KPI на главном экране</li>
+          <li>Чат с AI на русском</li>
+          <li>Голосовой ввод</li>
+          <li>Push-уведомления</li>
+          <li>Автоматические отчёты</li>
+          <li>Связка с десктопом</li>
+        </ul>
+      </div>
+      <div class="tier">
+        <div class="tier-icon">🏭</div>
+        <h3>ERP Интеграция</h3>
+        <div class="tier-price">от $5,000</div>
+        <div class="tier-desc">Полноценный ERP для крупных клиентов</div>
+        <ul>
+          <li>Внедрение Odoo (white-label)</li>
+          <li>WMS — складской учёт</li>
+          <li>Финансовый модуль</li>
+          <li>Закупки и CRM</li>
+          <li>Миграция из 1С</li>
+          <li>Обучение и поддержка</li>
+        </ul>
+      </div>
+    </div>
+    <div style="margin-top: 20px; text-align: center; padding: 16px; background: var(--accent-glow); border: 1px solid var(--accent-dim); border-radius: 10px;">
+      <p style="font-size: 14px; color: var(--accent);">Начни с Rendesk за $50/мес → расти до полноценного ERP когда бизнес готов</p>
+    </div>
+  </div>
+
+  <!-- SLIDE 11: Advantages -->
+  <div class="slide" data-index="10">
+    <div class="slide-label">Конкурентные преимущества</div>
+    <h2>Почему именно Rendesk<br>для узбекского рынка</h2>
+    <div class="adv-grid">
+      <div class="adv-item">
+        <div class="adv-icon">💾</div>
+        <h4>Работает с 1С</h4>
+        <p>Единственное AI-решение на рынке, которое подключается к локальной 1С</p>
+      </div>
+      <div class="adv-item">
+        <div class="adv-icon">🇷🇺</div>
+        <h4>Русский язык</h4>
+        <p>Нативная поддержка русского. Все промпты, интерфейс, ответы — на русском</p>
+      </div>
+      <div class="adv-item">
+        <div class="adv-icon">🔄</div>
+        <h4>Не нужно менять процессы</h4>
+        <p>Работает с тем что есть. 1С, Excel, бумага — Rendesk адаптируется</p>
+      </div>
+      <div class="adv-item">
+        <div class="adv-icon">💰</div>
+        <h4>Доступная цена</h4>
+        <p>$50-100/мес против $10,000+ за внедрение ERP</p>
+      </div>
+      <div class="adv-item">
+        <div class="adv-icon">🎙</div>
+        <h4>Голосовой ввод</h4>
+        <p>Надиктуйте — не нужно печатать. Идеально для руководителей</p>
+      </div>
+      <div class="adv-item">
+        <div class="adv-icon">📱</div>
+        <h4>Мобильное приложение</h4>
+        <p>Руководитель всегда в курсе — с телефона</p>
+      </div>
+      <div class="adv-item">
+        <div class="adv-icon">🧠</div>
+        <h4>AI адаптируется</h4>
+        <p>Не нужен программист для настройки. AI сам разберётся</p>
+      </div>
+      <div class="adv-item">
+        <div class="adv-icon">🔒</div>
+        <h4>Данные в офисе</h4>
+        <p>Всё остаётся на компьютере клиента. Ничего не уходит в облако</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 12: 7-Day Plan -->
+  <div class="slide" data-index="11">
+    <div class="slide-label">План запуска</div>
+    <h2>7 дней до первого клиента</h2>
+    <p class="subtitle" style="margin-bottom: 8px;">Цель: установить Rendesk у Musaffo + подготовить для 10 клиентов</p>
+    <div class="timeline">
+      <div class="tl-item">
+        <div class="tl-dot">1-2</div>
+        <div class="tl-content">
+          <h4>Подключение к 1С</h4>
+          <p>COM-интеграция: чтение справочников, документов, регистров. Запись документов обратно в 1С.</p>
+        </div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot">3</div>
+        <div class="tl-content">
+          <h4>Бизнес-промпты на русском</h4>
+          <p>AI понимает бухгалтерскую терминологию, знает структуру 1С, отвечает как бизнес-аналитик.</p>
+        </div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot">4</div>
+        <div class="tl-content">
+          <h4>Упрощение интерфейса</h4>
+          <p>Бизнес-режим: быстрые действия, простой чат, без технических деталей. Русский по умолчанию.</p>
+        </div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot">5</div>
+        <div class="tl-content">
+          <h4>Тестирование на данных Musaffo</h4>
+          <p>Установка на машине с аналогичной 1С. Тест: остатки, отчёты, документы. Запись проблем.</p>
+        </div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot">6</div>
+        <div class="tl-content">
+          <h4>Полировка + демо</h4>
+          <p>3 демо-сценария: складской отчёт, месячный P&L, генерация накладных. Видео на русском.</p>
+        </div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot">7</div>
+        <div class="tl-content">
+          <h4>Установка у Musaffo</h4>
+          <p>Доставка приложения. Подготовка питч-дека для 10 аналогичных компаний.</p>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top: 16px; display: flex; gap: 12px;">
+      <span class="tag green">Цель: 10 клиентов за 2 месяца</span>
+      <span class="tag blue">$500-1,000 MRR к концу месяца 2</span>
+    </div>
+  </div>
+
+  <!-- SLIDE 13: Closing -->
+  <div class="slide" data-index="12">
+    <div class="glow-bg glow-blue"></div>
+    <div class="glow-bg glow-purple" style="right: -100px; left: auto;"></div>
+    <div class="slide-label">Миссия</div>
+    <p class="closing-statement">
+      Rendesk — первый AI-интерфейс к крупнейшей нецифровизированной бизнес-экосистеме СНГ
+    </p>
+    <div class="divider" style="margin-top: 32px;"></div>
+    <div style="margin-top: 24px;">
+      <p style="font-size: 18px; color: var(--text-secondary); line-height: 1.6; max-width: 700px;">
+        3 миллиона бизнесов работают на пиратской 1С и ненавидят её.<br>
+        Мы даём им AI, который говорит на их языке.
+      </p>
+    </div>
+    <div style="margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--border);">
+      <p style="font-size: 14px; color: var(--text-muted);">
+        Rendesk &mdash; AI-ассистент для бизнеса<br>
+        <span style="color: var(--text-secondary);">rendesk.app</span>
+      </p>
+    </div>
+  </div>
+
+</div>
+
+<div class="nav-hint">
+  <span class="nav-key">&larr;</span>
+  <span class="nav-key">&rarr;</span>
+  навигация
+</div>
+
+<script>
+const slides = document.querySelectorAll('.slide');
+const counter = document.getElementById('counter');
+const progress = document.getElementById('progress');
+let current = 0;
+const total = slides.length;
+
+function goTo(n) {
+  if (n < 0 || n >= total) return;
+  slides[current].classList.remove('active');
+  current = n;
+  slides[current].classList.add('active');
+  counter.textContent = String(current + 1).padStart(2, '0') + ' / ' + String(total).padStart(2, '0');
+  progress.style.width = ((current + 1) / total * 100) + '%';
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); goTo(current + 1); }
+  if (e.key === 'ArrowLeft') { e.preventDefault(); goTo(current - 1); }
+  if (e.key === 'Home') goTo(0);
+  if (e.key === 'End') goTo(total - 1);
+});
+
+document.addEventListener('click', e => {
+  const x = e.clientX / window.innerWidth;
+  if (x > 0.5) goTo(current + 1);
+  else goTo(current - 1);
+});
+
+let touchStartX = 0;
+document.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; });
+document.addEventListener('touchend', e => {
+  const diff = touchStartX - e.changedTouches[0].clientX;
+  if (Math.abs(diff) > 50) { diff > 0 ? goTo(current + 1) : goTo(current - 1); }
+});
+
+goTo(0);
+</script>
+</body>
+</html>

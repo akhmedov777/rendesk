@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<!--
+  LOADING SEQUENCE:
+  1. Fetch document binary via /api/editor/convert (x2t converts to ONLYOFFICE format)
+  2. Store binary in window._currentDocumentBinary
+  3. Create DocsAPI editor (loads SDK in iframe)
+  4. Wait for Asc.asc_docs_api or Asc.spreadsheet_api to exist (SDK FULLY initialized)
+  5. Inject common.js into iframe (patches SDK for local/browser operation)
+  6. SDK calls LocalStartOpen() when ready -> triggers document load
+-->
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rendesk Editor</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #f4f4f4; }
+    #loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: #666;
+      font-size: 14px;
+    }
+    .spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid #ddd;
+      border-top-color: #333;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-right: 12px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #placeholder { width: 100%; height: 100%; }
+    .error { color: #c00; }
+  </style>
+</head>
+<body>
+  <div id="loading">
+    <div class="spinner"></div>
+    <span id="loading-text">Loading editor…</span>
+  </div>
+  <div id="placeholder" style="display:none;"></div>
+
+  <!-- Load desktop stub first so api.js detects desktop mode -->
+  <script type="text/javascript" src="/api/editor/static/desktop-stub.js"></script>
+  <!-- Load the main API -->
+  <script type="text/javascript" src="/api/editor/static/web-apps/apps/api/documents/api.js"></script>
+
+  <script>
+  (function() {
+    "use strict";
+
+    var params = new URLSearchParams(window.location.search);
+    var filePath = params.get("filePath");
+    var serviceUrl = params.get("serviceUrl") || window.location.origin;
+
+    // Make service URL available globally for common.js font loading
+    window._RENDESK_SERVICE_URL = serviceUrl;
+
+    if (!filePath) {
+      showError("No file path specified.");
+      return;
+    }
+
+    var ext = (filePath.split(".").pop() || "").toLowerCase();
+    var docType = getDocType(ext);
+
+    function getDocType(ext) {
+      var wordExts = ["doc", "docx", "odt", "rtf"];
+      var cellExts = ["xls", "xlsx", "ods", "csv"];
+      var slideExts = ["ppt", "pptx", "odp"];
+      if (wordExts.indexOf(ext) >= 0) return "word";
+      if (cellExts.indexOf(ext) >= 0) return "cell";
+      if (slideExts.indexOf(ext) >= 0) return "slide";
+      if (ext === "pdf") return "pdf";
+      return "word";
+    }
+
+    function showError(message) {
+      var el = document.getElementById("loading-text");
+      el.className = "error";
+      el.textContent = message;
+    }
+
+    function setStatus(message) {
+      document.getElementById("loading-text").textContent = message;
+    }
+
+    // Step 1: Fetch converted binary FIRST
+    setStatus("Converting document…");
+
+    var convertUrl = serviceUrl + "/api/editor/convert?filePath=" + encodeURIComponent(filePath);
+
+    // Pre-fetch common.js text so we can inject it synchronously later
+    var commonJsText = null;
+    var commonJsInjected = false;
+    var commonJsError = null;
+    fetch(serviceUrl + "/api/editor/static/sdkjs/common/Local/common.js")
+      .then(function(r) {
+        if (!r.ok) throw new Error("common.js fetch failed (" + r.status + ")");
+        return r.text();
+      })
+      .then(function(text) { commonJsText = text; })
+      .catch(function(err) {
+        commonJsError = err instanceof Error ? err : new Error(String(err));
+      });
+
+    fetch(convertUrl)
+      .then(function(response) {
+        if (!response.ok) {
+          return response.json().then(function(err) {
+            throw new Error(err.error || "Conversion failed (" + response.status + ")");
+          });
+        }
+        return response.arrayBuffer();
+      })
+      .then(function(buffer) {
+        // Store binary globally for LocalStartOpen() to pick up
+        window._currentDocumentBinary = new Uint8Array(buffer);
+
+        setStatus("Initializing editor…");
+
+        // Step 2: Check that DocsAPI loaded
+        if (!window.DocsAPI || !window.DocsAPI.DocEditor) {
+          showError("Editor API not available.");
+          return;
+        }
+
+        // Step 3: Show editor placeholder, hide loading
+        document.getElementById("loading").style.display = "none";
+        document.getElementById("placeholder").style.display = "block";
+
+        var fileName = filePath.split("/").pop() || filePath.split("\\").pop() || "document";
+        var openStrategy = "uninitialized";
+
+        // Step 4: Create the DocEditor
+        var docEditor = new window.DocsAPI.DocEditor("placeholder", {
+          type: "desktop",
+          documentType: docType,
+          editorConfig: {
+            mode: docType === "pdf" ? "view" : "edit",
+            callbackUrl: "",
+            user: {
+              id: "rendesk-user",
+              name: "User",
+            },
+            customization: {
+              autosave: false,
+              forcesave: true,
+              chat: false,
+              comments: false,
+              help: false,
+              hideRightMenu: true,
+              compactToolbar: true,
+              toolbarNoTabs: true,
+              feedback: false,
+              goback: false,
+              about: false,
+            },
+            lang: "en",
+          },
+          height: "100%",
+          width: "100%",
+          events: {
+            onAppReady: function() {
+              notifyParent("editor:app-ready");
+              if (!openViaDocsApiBinary()) {
+                injectCommonAndOpenDoc();
+              }
+            },
+            onDocumentReady: function() {
+              notifyParent("editor:ready");
+            },
+            onDocumentStateChange: function(event) {
+              notifyParent("editor:state-change", { modified: event && event.data });
+            },
+            onError: function(event) {
+              var payload = event && event.data ? event.data : {};
+              var desc = payload.errorDescription || "Editor error";
+              notifyParent("editor:error", {
+                error: desc,
+                code: payload.errorCode != null ? String(payload.errorCode) : undefined,
+                details: JSON.stringify({
+                  strategy: openStrategy,
+                  sdk: payload,
+                }),
+              });
+            },
+            onRequestClose: function() {
+              notifyParent("editor:close");
+            },
+          },
+        });
+
+        window.editorInstance = docEditor;
+
+        function toArrayBuffer(u8) {
+          return u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
+        }
+
+        function openViaDocsApiBinary() {
+          if (!docEditor || typeof docEditor.openDocument !== "function") return false;
+          if (!window._currentDocumentBinary || !window._currentDocumentBinary.length) return false;
+          try {
+            openStrategy = "docsapi-openDocumentFromBinary";
+            docEditor.openDocument({ buffer: toArrayBuffer(window._currentDocumentBinary) });
+            return true;
+          } catch (e) {
+            console.error("[loader] docsapi binary open failed:", e);
+            openStrategy = "localstartopen-fallback";
+            return false;
+          }
+        }
+
+        // Unified function: inject common.js + trigger LocalStartOpen chain
+        var localStartTriggered = false;
+        var localStartAttempts = 0;
+
+        function injectCommonAndOpenDoc() {
+          if (localStartTriggered) return;
+          localStartAttempts += 1;
+          openStrategy = "localstartopen-fallback";
+
+          var iframe = document.querySelector('iframe[name="frameEditor"]') ||
+                       document.querySelector('iframe');
+          if (!iframe || !iframe.contentWindow) {
+            if (localStartAttempts > 500) {
+              notifyParent("editor:error", { error: "Editor iframe did not initialize." });
+              return;
+            }
+            setTimeout(injectCommonAndOpenDoc, 50);
+            return;
+          }
+
+          var iw = iframe.contentWindow;
+
+          // Wait for SDK core classes
+          if (!iw.AscCommon || !iw.AscCommon.baseEditorsApi || !iw.AscFonts) {
+            setTimeout(injectCommonAndOpenDoc, 30);
+            return;
+          }
+
+          // Wait for common.js text
+          if (!commonJsText) {
+            if (commonJsError) {
+              notifyParent("editor:error", {
+                error: "Failed to load SDK local patch: " + commonJsError.message
+              });
+              return;
+            }
+            setTimeout(injectCommonAndOpenDoc, 30);
+            return;
+          }
+
+          // Inject common.js if not done yet
+          if (!commonJsInjected) {
+            commonJsInjected = true;
+            iw._currentDocumentBinary = window._currentDocumentBinary;
+            iw._RENDESK_SERVICE_URL = serviceUrl;
+            try {
+              var s = iw.document.createElement("script");
+              s.textContent = commonJsText;
+              iw.document.head.appendChild(s);
+            } catch (e) {
+              console.error("[loader] common.js injection failed:", e);
+              if (localStartAttempts > 500) {
+                notifyParent("editor:error", { error: "common.js injection failed: " + e.message });
+                return;
+              }
+              setTimeout(injectCommonAndOpenDoc, 50);
+              return;
+            }
+          }
+
+          // Keep binary/state mirrored into the inner frame/stub.
+          iw._currentDocumentBinary = window._currentDocumentBinary;
+          iw._RENDESK_SERVICE_URL = serviceUrl;
+          if (iw.AscDesktopEditor && typeof iw.AscDesktopEditor.__setCurrentBinary === "function") {
+            iw.AscDesktopEditor.__setCurrentBinary(window._currentDocumentBinary);
+          }
+
+          // Wait until the local patch exported DesktopOfflineAppDocumentEndLoad.
+          if (typeof iw.DesktopOfflineAppDocumentEndLoad !== "function") {
+            if (localStartAttempts > 500) {
+              notifyParent("editor:error", {
+                error: "SDK local patch did not initialize DesktopOfflineAppDocumentEndLoad."
+              });
+              return;
+            }
+            setTimeout(injectCommonAndOpenDoc, 40);
+            return;
+          }
+
+          if (!iw.AscDesktopEditor || typeof iw.AscDesktopEditor.LocalStartOpen !== "function") {
+            if (localStartAttempts > 500) {
+              notifyParent("editor:error", { error: "AscDesktopEditor.LocalStartOpen is unavailable." });
+              return;
+            }
+            setTimeout(injectCommonAndOpenDoc, 40);
+            return;
+          }
+
+          try {
+            localStartTriggered = true;
+            iw.AscDesktopEditor.LocalStartOpen();
+          } catch (e) {
+            localStartTriggered = false;
+            if (localStartAttempts > 500) {
+              notifyParent("editor:error", { error: "Failed to start local document load: " + e.message });
+              return;
+            }
+            setTimeout(injectCommonAndOpenDoc, 50);
+          }
+        }
+
+        // Also start polling immediately as fallback
+        injectCommonAndOpenDoc();
+      })
+      .catch(function(error) {
+        showError("Failed to load document: " + error.message);
+        notifyParent("editor:error", { error: error.message });
+      });
+
+    function notifyParent(type, data) {
+      try {
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage({ type: type, data: data || {} }, "*");
+        }
+      } catch (e) {}
+    }
+  })();
+  </script>
+</body>
+</html>

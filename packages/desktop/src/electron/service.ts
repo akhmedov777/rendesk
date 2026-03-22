@@ -34,26 +34,13 @@ import {
   type WidgetSource,
 } from "@rendesk/sdk/v2/client"
 import { queryWorkspaceAnalytics, type AnalyticsSnapshot } from "./analytics.js"
-import { createOnlyOfficeApiHandlers } from "./onlyoffice/http-handlers.js"
-import {
-  applyEditorEnvOverrides,
-  coerceEditorIntegrationUpdate,
-  defaultEditorIntegrationConfig,
-  redactEditorIntegrationConfig,
-  resolveEditorIntegrationConfig,
-} from "./onlyoffice/integration-config.js"
+import { createEditorApiHandlers, wasRecentlySaved } from "./onlyoffice/http-handlers.js"
 import { createOnlyOfficeMcpServer } from "./onlyoffice/mcp-server.js"
-import { getEditorIngressPort, startEditorIngressServer, stopEditorIngressServer } from "./onlyoffice/ingress-server.js"
-import {
-  ensureEditorTunnelReady,
-  getEditorTunnelState,
-  reconnectEditorTunnel,
-  setEditorTunnelIngressPort,
-  shutdownEditorTunnelManager,
-} from "./onlyoffice/tunnel-manager.js"
-import type { ActiveEditorState, EditorIntegrationConfig } from "./onlyoffice/types.js"
-import type { ProviderAuthStore } from "./provider-auth-store.js"
+import type { ActiveEditorState } from "./onlyoffice/types.js"
+import { watchFile, stopWatching, stopAllWatchers } from "./onlyoffice/file-watcher.js"
+import { missingManagedDesktopConfigKeys, readManagedDesktopConfig } from "./managed-config.js"
 import { createVisualizationMcpServer } from "./visualization-mcp.js"
+import { createPyodideMcpServer, type SendPyodideRequest } from "./pyodide-mcp.js"
 
 type ProviderListResponse = {
   all: Array<{
@@ -359,7 +346,7 @@ type PersistedState = {
     displayBackend: "auto" | "wayland" | null
   }
   integrations: {
-    editor: EditorIntegrationConfig
+    editor: { enabled: boolean }
   }
   projects: Project[]
   sessions: Session[]
@@ -410,16 +397,36 @@ type AnthropicModelDefinition = {
 
 type ResolvedProviderCredential = {
   key: string
-  source: "env" | "api"
+  source: "config"
 }
+
+const RENVEL_AI_SYSTEM_PROMPT = `You are Renvel AI, the intelligent assistant built into Rendesk — a back-office automation platform by Renvel Co.
+
+Your role is to help users automate and augment repetitive business workflows. You specialize in:
+- Analyzing, editing, and generating business documents, spreadsheets, and PDFs
+- Writing, reviewing, and debugging code across all major languages and frameworks
+- Automating data processing, reporting, and file management tasks
+- Providing structured analysis and actionable recommendations
+
+Identity rules:
+- You are Renvel AI. When asked your name, identity, or what model you are, always respond that you are Renvel AI.
+- You are made by Renvel Co. Never reference any other company as your creator or provider.
+- Never disclose the name of your underlying model, architecture, training process, or any third-party AI provider.
+- If pressed about technical details of your model, explain that you are a proprietary system developed by Renvel Co.
+
+Communication style:
+- Be professional, concise, and action-oriented
+- Lead with solutions, not caveats
+- Confirm before making destructive file changes
+- Maintain context across the conversation`
 
 const ANTHROPIC_PROVIDER_ID = "anthropic"
 const DEFAULT_ANTHROPIC_MODEL_ID = "claude-sonnet-4-5-20250929"
 const ANTHROPIC_MODEL_CATALOG: AnthropicModelDefinition[] = [
   {
     id: "claude-opus-4-6",
-    name: "Claude Opus 4.6",
-    family: "claude-opus",
+    name: "Renvel Ultra",
+    family: "renvel-ultra",
     release_date: "2025-10-01",
     limit: {
       context: 200_000,
@@ -428,8 +435,8 @@ const ANTHROPIC_MODEL_CATALOG: AnthropicModelDefinition[] = [
   },
   {
     id: DEFAULT_ANTHROPIC_MODEL_ID,
-    name: "Claude Sonnet 4.5",
-    family: "claude-sonnet",
+    name: "Renvel Medium",
+    family: "renvel-medium",
     release_date: "2025-09-29",
     limit: {
       context: 200_000,
@@ -438,8 +445,8 @@ const ANTHROPIC_MODEL_CATALOG: AnthropicModelDefinition[] = [
   },
   {
     id: "claude-haiku-4-5-20251001",
-    name: "Claude Haiku 4.5",
-    family: "claude-haiku",
+    name: "Renvel Fast",
+    family: "renvel-fast",
     release_date: "2025-10-01",
     limit: {
       context: 200_000,
@@ -452,9 +459,9 @@ const providerList = (anthropicCredential: ResolvedProviderCredential | null): P
   all: [
     {
       id: ANTHROPIC_PROVIDER_ID,
-      name: "Anthropic",
+      name: "Renvel AI",
       source: anthropicCredential?.source,
-      env: ["ANTHROPIC_API_KEY"],
+      env: [],
       models: Object.fromEntries(
         ANTHROPIC_MODEL_CATALOG.map((model) => [
           model.id,
@@ -513,7 +520,7 @@ const defaultState = (): PersistedState => ({
     displayBackend: null,
   },
   integrations: {
-    editor: defaultEditorIntegrationConfig(),
+    editor: { enabled: true },
   },
   projects: [],
   sessions: [],
@@ -1051,9 +1058,23 @@ const toolInputVisualization = (tool: string, input: unknown): VisualizationPayl
 
 export async function createLocalService(input: {
   userDataPath: string
-  authStore: ProviderAuthStore
+  packaged?: boolean
   sendEditorToolRequest?: (toolName: string, toolInput: Record<string, unknown>) => Promise<string>
+  sendPyodideRequest?: SendPyodideRequest
 }) {
+  const managedConfig = readManagedDesktopConfig()
+  const missingManaged = missingManagedDesktopConfigKeys(managedConfig)
+  if (input.packaged && missingManaged.length > 0) {
+    throw new Error(
+      `Managed infrastructure keys are missing in packaged desktop runtime: ${missingManaged.join(
+        ", ",
+      )}. Rebuild with internal CI/package-time env injection.`,
+    )
+  }
+
+  const legacyProviderAuthPath = join(input.userDataPath, "provider-auth.json")
+  await fs.rm(legacyProviderAuthPath, { force: true }).catch(() => undefined)
+
   const statePath = join(input.userDataPath, "backoffice-state.json")
   const defaults = defaultState()
   const initial = await readJson(statePath, defaults)
@@ -1069,16 +1090,7 @@ export async function createLocalService(input: {
       ...(isPlainObject(initial.preferences) ? initial.preferences : {}),
     },
     integrations: {
-      editor: applyEditorEnvOverrides(
-        resolveEditorIntegrationConfig(
-          coerceEditorIntegrationUpdate(
-            defaults.integrations.editor,
-            isPlainObject(initial.integrations?.editor)
-              ? (initial.integrations.editor as Partial<EditorIntegrationConfig>)
-              : {},
-          ),
-        ),
-      ),
+      editor: { enabled: true },
     },
     projects: Array.isArray(initial.projects) ? initial.projects : [],
     sessions: Array.isArray(initial.sessions) ? initial.sessions : [],
@@ -1088,6 +1100,27 @@ export async function createLocalService(input: {
     questions: initial.questions ?? {},
     dashboards: initial.dashboards ?? {},
     analyticsEvents: Array.isArray(initial.analyticsEvents) ? initial.analyticsEvents : [],
+  }
+
+  const enforceManagedConfigState = () => {
+    let changed = false
+
+    if (typeof state.config.model !== "string" || !state.config.model.startsWith(`${ANTHROPIC_PROVIDER_ID}/`)) {
+      state.config.model = `${ANTHROPIC_PROVIDER_ID}/${DEFAULT_ANTHROPIC_MODEL_ID}`
+      changed = true
+    }
+
+    if (Object.keys(state.config.provider ?? {}).length > 0) {
+      state.config.provider = {}
+      changed = true
+    }
+
+    if ((state.config.disabled_providers ?? []).length > 0) {
+      state.config.disabled_providers = []
+      changed = true
+    }
+
+    return changed
   }
 
   const migrateLegacyMessageIDs = () => {
@@ -1182,7 +1215,12 @@ export async function createLocalService(input: {
     return changed
   }
 
-  if (migrateLegacyMessageIDs() || migrateVisualizationToolParts() || migrateVisualizationToolTitles()) {
+  if (
+    migrateLegacyMessageIDs() ||
+    migrateVisualizationToolParts() ||
+    migrateVisualizationToolTitles() ||
+    enforceManagedConfigState()
+  ) {
     await writeJson(statePath, state)
   }
 
@@ -1199,6 +1237,9 @@ export async function createLocalService(input: {
   >()
   const editorMcpServer = input.sendEditorToolRequest
     ? createOnlyOfficeMcpServer(input.sendEditorToolRequest)
+    : undefined
+  const pyodideMcpServer = input.sendPyodideRequest
+    ? createPyodideMcpServer(input.sendPyodideRequest, input.sendEditorToolRequest)
     : undefined
   let savePending: Promise<void> | undefined
 
@@ -1218,20 +1259,12 @@ export async function createLocalService(input: {
   }
 
   const resolveAnthropicCredential = async (): Promise<ResolvedProviderCredential | null> => {
-    const storedKey = await input.authStore.getApiKey(ANTHROPIC_PROVIDER_ID)
-    if (storedKey) {
-      return {
-        key: storedKey,
-        source: "api",
-      }
-    }
-
-    const envKey = process.env.ANTHROPIC_API_KEY?.trim() || process.env.ANTHROPIC_AUTH_TOKEN?.trim()
-    if (!envKey) return null
+    const key = managedConfig.anthropicApiKey.trim()
+    if (!key) return null
 
     return {
-      key: envKey,
-      source: "env",
+      key,
+      source: "config",
     }
   }
 
@@ -1251,7 +1284,7 @@ export async function createLocalService(input: {
       if (await pathExists(candidate)) return candidate
     }
 
-    throw new Error(`Claude Code executable could not be found. Checked: ${candidates.join(", ")}`)
+    throw new Error(`Rendesk agent executable could not be found. Checked: ${candidates.join(", ")}`)
   }
 
   const dashboardStateFor = (directory: string): DashboardDirectoryState => {
@@ -1319,28 +1352,18 @@ export async function createLocalService(input: {
     await scheduleSave()
   }
 
-  const updateEditorIntegration = async (next: Partial<EditorIntegrationConfig>) => {
-    state.integrations.editor = applyEditorEnvOverrides(
-      resolveEditorIntegrationConfig(coerceEditorIntegrationUpdate(state.integrations.editor, next)),
-    )
-    await shutdownEditorTunnelManager()
-    await scheduleSave()
-  }
+  // Resolve resources path: in packaged app use process.resourcesPath, in dev use relative path.
+  const resourcesPath = input.packaged
+    ? (process.resourcesPath ?? join(dirname(fileURLToPath(import.meta.url)), "..", ".."))
+    : join(dirname(fileURLToPath(import.meta.url)), "..", "..", "resources")
 
-  const onlyOfficeHandlers = createOnlyOfficeApiHandlers({
-    getConfig: () => state.integrations.editor,
-    getIngressPort: () => getEditorIngressPort(),
-    ensureTunnelReady: ensureEditorTunnelReady,
-    getTunnelState: getEditorTunnelState,
-    reconnectTunnel: reconnectEditorTunnel,
+  const editorHandlers = createEditorApiHandlers({
+    getResourcesPath: () => join(resourcesPath, "editors"),
+    getConverterPath: () => join(resourcesPath, "converter"),
+    getCachePath: () => join(input.userDataPath, "editor-cache"),
+    getFontDataPath: () => join(resourcesPath, "fonts"),
+    getFontSelectionPath: () => join(resourcesPath, "fonts", "font_selection.bin"),
   })
-
-  const ingressPort = await startEditorIngressServer({
-    handleDownload: onlyOfficeHandlers.handleDownload,
-    handleCallbackGet: onlyOfficeHandlers.handleCallbackGet,
-    handleCallbackPost: onlyOfficeHandlers.handleCallbackPost,
-  })
-  setEditorTunnelIngressPort(ingressPort)
 
   const ensureProject = async (directory: string) => {
     const existing = state.projects.find((project) => project.worktree === directory)
@@ -1626,7 +1649,9 @@ export async function createLocalService(input: {
   }): Promise<SDKResultMessage | undefined> => {
     const anthropicCredential = await resolveAnthropicCredential()
     if (!anthropicCredential) {
-      throw new Error("Anthropic API key is not configured. Connect Anthropic in Settings > Providers to continue.")
+      throw new Error(
+        "Renvel AI is unavailable because managed infrastructure credentials are missing. Contact your administrator.",
+      )
     }
 
     const sdk = await import("@anthropic-ai/claude-agent-sdk")
@@ -1898,9 +1923,20 @@ export async function createLocalService(input: {
     const editorState = activeEditorStates.get(input.session.id)
     const includeEditorMcp = Boolean(editorState && state.integrations.editor.enabled && editorMcpServer)
     const visualizationMcpServer = createVisualizationMcpServer(() => buildAnalyticsSnapshot(input.directory))
+    const includePyodideMcp = Boolean(editorState && pyodideMcpServer)
     const mcpServers = {
       ...(includeEditorMcp && editorMcpServer ? { editor: editorMcpServer } : {}),
+      ...(includePyodideMcp && pyodideMcpServer ? { pyodide: pyodideMcpServer } : {}),
       visualization: visualizationMcpServer,
+    }
+
+    let systemPrompt = RENVEL_AI_SYSTEM_PROMPT
+    if (includePyodideMcp) {
+      systemPrompt += `\n\nPython execution:
+- You have access to a local Python environment (Pyodide/WebAssembly) with pandas, numpy, scipy, and matplotlib.
+- Use python_load_spreadsheet to load data from the open spreadsheet into a pandas DataFrame, then use execute_python to analyze it.
+- Matplotlib figures are automatically captured and displayed inline.
+- Prefer python_load_spreadsheet + execute_python for data analysis tasks over manually reading cells.`
     }
 
     const iterator = sdk.query({
@@ -1919,6 +1955,7 @@ export async function createLocalService(input: {
         resume: input.session.anthropicSessionID,
         settingSources: [],
         spawnClaudeCodeProcess,
+        systemPrompt,
       },
     })
     input.run.query = iterator
@@ -2076,7 +2113,7 @@ export async function createLocalService(input: {
           assistant.error = {
             name: result.subtype,
             data: {
-              message: result.errors.join("\n") || "Anthropic Agent SDK execution failed.",
+              message: result.errors.join("\n") || "Renvel AI agent execution failed.",
             },
           }
         }
@@ -2342,10 +2379,20 @@ export async function createLocalService(input: {
       case "global.config.get":
       case "config.get":
         return { data: state.config }
-      case "global.config.update":
-        state.config = { ...state.config, ...(request.input ?? {}) }
+      case "global.config.update": {
+        const patch = isPlainObject(request.input) ? { ...request.input } : {}
+        delete patch.provider
+        delete patch.disabled_providers
+        delete patch.enabled_providers
+
+        if (typeof patch.model === "string" && !patch.model.startsWith(`${ANTHROPIC_PROVIDER_ID}/`)) {
+          patch.model = `${ANTHROPIC_PROVIDER_ID}/${DEFAULT_ANTHROPIC_MODEL_ID}`
+        }
+
+        state.config = { ...state.config, ...patch }
         await scheduleSave()
         return { data: state.config }
+      }
       case "path.get":
         return { data: pathPayload(directory) }
       case "project.list":
@@ -2377,11 +2424,7 @@ export async function createLocalService(input: {
       case "provider.list":
         return { data: providerList(await resolveAnthropicCredential()) }
       case "provider.auth":
-        return {
-          data: {
-            [ANTHROPIC_PROVIDER_ID]: [{ type: "api", label: "Anthropic API key" }],
-          },
-        }
+        return { data: {} }
       case "provider.oauth.authorize":
       case "provider.oauth.callback":
         return { error: { message: "OAuth is not available in the desktop build" } }
@@ -2394,11 +2437,30 @@ export async function createLocalService(input: {
       case "session.list": {
         if (!directory) return { data: [], limit: request.input?.limit ?? 0, limited: false }
         await ensureProject(directory)
+        const rootsOnly = request.input?.roots === true
+        const start = typeof request.input?.start === "number" ? request.input.start : undefined
+        const search = typeof request.input?.search === "string" ? request.input.search.trim().toLowerCase() : ""
         const all = state.sessions
           .filter((session) => session.directory === directory && !session.time.archived)
-          .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-        const limit = Number(request.input?.limit ?? all.length)
-        const data = all.slice(-limit)
+          .filter((session) => !rootsOnly || !session.parentID)
+          .filter((session) => {
+            if (start === undefined) return true
+            const updatedAt = session.time.updated ?? session.time.created
+            return updatedAt >= start
+          })
+          .filter((session) => {
+            if (!search) return true
+            return (session.title ?? "").toLowerCase().includes(search)
+          })
+          .sort((a, b) => {
+            const aUpdated = a.time.updated ?? a.time.created
+            const bUpdated = b.time.updated ?? b.time.created
+            if (aUpdated !== bUpdated) return bUpdated - aUpdated
+            return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+          })
+        const parsedLimit = Number(request.input?.limit ?? all.length)
+        const limit = Number.isFinite(parsedLimit) ? Math.max(0, Math.floor(parsedLimit)) : all.length
+        const data = all.slice(0, limit)
         return { data, limit, limited: all.length > data.length }
       }
       case "session.create": {
@@ -2767,22 +2829,18 @@ export async function createLocalService(input: {
       case "pty.remove":
         return { data: null }
       case "auth.set": {
-        const providerID = String(request.input?.providerID ?? "")
-        const key = typeof request.input?.auth?.key === "string" ? request.input.auth.key : undefined
-        const type = request.input?.auth?.type
-
-        if (!providerID || type !== "api" || !key?.trim()) {
-          return { error: { message: "Only API key authentication is supported in the desktop build" } }
+        return {
+          error: {
+            message: "Provider authentication is managed by infrastructure in this desktop build.",
+          },
         }
-
-        await input.authStore.setApiKey(providerID, key)
-        return { data: true }
       }
       case "auth.remove": {
-        const providerID = String(request.input?.providerID ?? "")
-        if (!providerID) return { error: { message: "Provider ID is required" } }
-        await input.authStore.remove(providerID)
-        return { data: true }
+        return {
+          error: {
+            message: "Provider authentication is managed by infrastructure in this desktop build.",
+          },
+        }
       }
       case "pty.list":
         return { data: [] }
@@ -2832,55 +2890,90 @@ export async function createLocalService(input: {
           return
         }
 
-        if (url.pathname === "/api/editor/config" && request.method === "GET") {
-          await onlyOfficeHandlers.handleConfig(request, response)
+        if (url.pathname === "/api/editor/open" && request.method === "GET") {
+          await editorHandlers.handleEditorOpen(request, response)
+          return
+        }
+
+        if (url.pathname === "/api/editor/convert" && request.method === "GET") {
+          await editorHandlers.handleEditorConvert(request, response)
+          return
+        }
+
+        if (url.pathname === "/api/editor/save" && request.method === "POST") {
+          await editorHandlers.handleEditorSave(request, response)
           return
         }
 
         if (url.pathname === "/api/editor/file-mtime" && request.method === "GET") {
-          await onlyOfficeHandlers.handleFileMtime(request, response)
+          await editorHandlers.handleFileMtime(request, response)
           return
         }
 
-        if (url.pathname === "/api/editor/download" && ["GET", "HEAD"].includes(request.method ?? "GET")) {
-          await onlyOfficeHandlers.handleDownload(request, response)
+        if (url.pathname.startsWith("/api/editor/fonts/")) {
+          await editorHandlers.handleFonts(request, response)
           return
         }
 
-        if (url.pathname === "/api/editor/callback" && request.method === "GET") {
-          await onlyOfficeHandlers.handleCallbackGet(request, response)
+        if (url.pathname.startsWith("/api/editor/static/")) {
+          await editorHandlers.handleStatic(request, response)
           return
         }
 
-        if (url.pathname === "/api/editor/callback" && request.method === "POST") {
-          await onlyOfficeHandlers.handleCallbackPost(request, response)
+        // Root-level static routes: the SDK uses absolute paths like /sdkjs/..., /web-apps/...
+        if (url.pathname.startsWith("/sdkjs/") || url.pathname.startsWith("/web-apps/")) {
+          request.url = "/api/editor/static" + url.pathname + (url.search || "")
+          await editorHandlers.handleStatic(request, response)
           return
         }
 
-        if (url.pathname === "/api/editor/tunnel/status" && request.method === "GET") {
-          await onlyOfficeHandlers.handleTunnelStatus(request, response)
-          return
-        }
-
-        if (url.pathname === "/api/editor/tunnel/reconnect" && request.method === "POST") {
-          await onlyOfficeHandlers.handleTunnelReconnect(request, response)
+        // Serve Pyodide assets from resources/pyodide/
+        if (url.pathname.startsWith("/pyodide/")) {
+          const { existsSync, statSync, createReadStream } = await import("node:fs")
+          const restPath = url.pathname.replace(/^\/pyodide\//, "")
+          if (!restPath) {
+            response.writeHead(400)
+            response.end("Path required")
+            return
+          }
+          const pyodidePath = join(resourcesPath, "pyodide")
+          const filePath = join(pyodidePath, restPath)
+          if (!filePath.startsWith(pyodidePath)) {
+            response.writeHead(403)
+            response.end("Forbidden")
+            return
+          }
+          if (!existsSync(filePath) || !statSync(filePath).isFile()) {
+            response.writeHead(404)
+            response.end("Not found")
+            return
+          }
+          const ext = filePath.split(".").pop() ?? ""
+          const mimeTypes: Record<string, string> = {
+            js: "application/javascript",
+            wasm: "application/wasm",
+            json: "application/json",
+            tar: "application/x-tar",
+            zip: "application/zip",
+            whl: "application/zip",
+            data: "application/octet-stream",
+          }
+          const contentType = mimeTypes[ext] ?? "application/octet-stream"
+          const stat = statSync(filePath)
+          response.writeHead(200, {
+            "content-type": contentType,
+            "content-length": stat.size,
+            "access-control-allow-origin": "*",
+            "cache-control": "public, max-age=86400",
+          })
+          createReadStream(filePath).pipe(response)
           return
         }
 
         if (url.pathname === "/api/integrations" && request.method === "GET") {
           sendJson(response, 200, {
-            editor: redactEditorIntegrationConfig(state.integrations.editor),
+            editor: { enabled: state.integrations.editor.enabled },
           })
-          return
-        }
-
-        if (url.pathname === "/api/integrations/editor" && request.method === "PUT") {
-          await onlyOfficeHandlers.handleEditorIntegrationUpdate(request, response, updateEditorIntegration)
-          return
-        }
-
-        if (url.pathname === "/api/integrations/editor/test" && request.method === "POST") {
-          await onlyOfficeHandlers.handleEditorIntegrationTest(request, response)
           return
         }
 
@@ -2930,8 +3023,20 @@ export async function createLocalService(input: {
     },
     async setEditorState(next: ActiveEditorState) {
       activeEditorStates.set(next.sessionID, next)
+      watchFile(next.filePath, (filePath, mtimeMs) => {
+        // Skip notification if this change was caused by our own save
+        if (wasRecentlySaved(filePath)) return
+        emit(undefined, {
+          type: "editor:file-changed",
+          properties: { filePath, mtimeMs },
+        })
+      })
     },
     async clearEditorState(sessionID: string) {
+      const existing = activeEditorStates.get(sessionID)
+      if (existing) {
+        stopWatching(existing.filePath)
+      }
       activeEditorStates.delete(sessionID)
     },
     bootstrap() {
@@ -2948,8 +3053,7 @@ export async function createLocalService(input: {
         run.controller.abort()
       }
       activeEditorStates.clear()
-      await shutdownEditorTunnelManager()
-      await stopEditorIngressServer()
+      stopAllWatchers()
       await scheduleSave()
       await new Promise<void>((resolve, reject) => {
         server.close((error) => {

@@ -1,5 +1,5 @@
 import { File as SharedFile, type FileProps } from "@rendesk/ui/file"
-import { getEditorDocumentType, isOnlyOfficeExtension } from "../onlyoffice/metadata"
+import { getEditorDocumentType, isOnlyOfficeExtension } from "../electron/onlyoffice/config"
 import { OnlyOfficeEditor } from "./onlyoffice-editor"
 
 type DesktopFileProps = FileProps & {

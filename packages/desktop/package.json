@@ -17,7 +17,8 @@
     "pack": "bun run build && bun x electron-builder --dir",
     "dist": "bun run build && bun x electron-builder",
     "dist:mac": "bun run build && bun x electron-builder --mac dmg zip",
-    "dist:win": "bun run build && bun x electron-builder --win nsis --x64"
+    "dist:win": "bun run build && bun x electron-builder --win nsis --x64",
+    "download:pyodide": "bun scripts/download-pyodide.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.66",

@@ -1,20 +1,10 @@
 export type EditorDocumentType = "word" | "cell" | "slide" | "pdf" | "unknown"
 
-export type EditorTransportMode = "local" | "manual" | "auto-tunnel"
-
 export type SpreadsheetSelection = {
   range: string
   sheetName: string
   preview: string
   cellCount: number
-}
-
-export type EditorIntegrationConfig = {
-  enabled: boolean
-  documentServerUrl: string
-  jwtSecret: string
-  callbackBaseUrl: string
-  autoTunnelEnabled: boolean
 }
 
 export type ActiveEditorState = {

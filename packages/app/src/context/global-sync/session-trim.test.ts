@@ -28,6 +28,21 @@ describe("trimSessions", () => {
     expect(result.map((x) => x.id)).toEqual(["a", "b", "c", "d"])
   })
 
+  test("selects base roots by last activity instead of lexicographic id", () => {
+    const now = 72_000_000
+    const hour = 60 * 60 * 1000
+    const list = [
+      session({ id: "session-z", created: now - 14 * hour }),
+      session({ id: "session-a", created: now - 11 * hour }),
+      session({ id: "session-m", created: now - 13 * hour }),
+      session({ id: "session-b", created: now - 10 * hour }),
+      session({ id: "session-x", created: now - 15 * hour }),
+    ]
+
+    const result = trimSessions(list, { limit: 2, permission: {}, now })
+    expect(result.map((x) => x.id)).toEqual(["session-a", "session-b"])
+  })
+
   test("keeps children when root is kept, permission exists, or child is recent", () => {
     const now = 1_000_000
     const list = [

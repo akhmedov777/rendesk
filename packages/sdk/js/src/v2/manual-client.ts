@@ -239,6 +239,22 @@ export class OpencodeClient {
     },
   }
 
+  readonly automation: any = (() => {
+    const run: any = (...args: any[]) => this.rpc("automation.run", args[0], args[1])
+    run.list = (...args: any[]) => this.rpc("automation.run.list", args[0], args[1])
+    run.get = (...args: any[]) => this.rpc("automation.run.get", args[0], args[1])
+    return {
+      list: (...args: any[]) => this.rpc("automation.list", args[0], args[1]),
+      get: (...args: any[]) => this.rpc("automation.get", args[0], args[1]),
+      create: (...args: any[]) => this.rpc("automation.create", args[0], args[1]),
+      update: (...args: any[]) => this.rpc("automation.update", args[0], args[1]),
+      delete: (...args: any[]) => this.rpc("automation.delete", args[0], args[1]),
+      run,
+      runList: run.list,
+      runGet: run.get,
+    }
+  })()
+
   readonly vcs: any = {
     get: (...args: any[]) => this.rpc("vcs.get", args[0], args[1]),
   }

@@ -36,6 +36,7 @@ export type Platform = {
   capabilities?: {
     dashboard?: boolean
     visualization?: boolean
+    automations?: boolean
   }
 
   /** Desktop OS (Tauri only) */

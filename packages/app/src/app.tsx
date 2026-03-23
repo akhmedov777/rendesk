@@ -36,6 +36,7 @@ import { Dynamic } from "solid-js/web"
 const Home = lazy(() => import("@/pages/home"))
 const Session = lazy(() => import("@/pages/session"))
 const Dashboard = lazy(() => import("@/pages/dashboard"))
+const Automations = lazy(() => import("@/pages/automations"))
 const Loading = () => <div class="size-full" />
 
 const HomeRoute = () => (
@@ -55,6 +56,12 @@ const SessionRoute = () => (
 const DashboardRoute = () => (
   <Suspense fallback={<Loading />}>
     <Dashboard />
+  </Suspense>
+)
+
+const AutomationsRoute = () => (
+  <Suspense fallback={<Loading />}>
+    <Automations />
   </Suspense>
 )
 
@@ -178,6 +185,7 @@ export function AppInterface(props: {
                 <Route path="/" component={SessionIndexRoute} />
                 <Route path="/session/:id?" component={SessionRoute} />
                 <Route path="/dashboard/:dashboardId?" component={DashboardRoute} />
+                <Route path="/automations/:automationId?" component={AutomationsRoute} />
               </Route>
             </Dynamic>
           </GlobalSyncProvider>

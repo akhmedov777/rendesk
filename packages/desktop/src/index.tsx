@@ -62,6 +62,7 @@ const createPlatform = (bootstrap: { os: DesktopOs; serviceUrl: string }): Platf
     capabilities: {
       dashboard: true,
       visualization: true,
+      automations: true,
     },
     os: bootstrap.os,
     version: pkg.version,

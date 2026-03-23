@@ -44,6 +44,7 @@ import { Worktree as WorktreeState } from "@/utils/worktree"
 import { setSessionHandoff } from "@/pages/session/handoff"
 import { sortMessageParts } from "@/context/part-order"
 import { dashboardHref } from "@/features/dashboard/helpers"
+import { automationsHref } from "@/features/automations/helpers"
 
 import { useDialog } from "@rendesk/ui/context/dialog"
 import { useTheme, type ColorScheme } from "@rendesk/ui/theme"
@@ -128,6 +129,7 @@ export default function Layout(props: ParentProps) {
   const colorSchemeLabel = (scheme: ColorScheme) => language.t(colorSchemeKey[scheme])
   const currentDir = createMemo(() => decode64(params.dir) ?? "")
   const dashboardEnabled = createMemo(() => platform.platform === "desktop" && platform.capabilities?.dashboard === true)
+  const automationsEnabled = createMemo(() => platform.platform === "desktop" && platform.capabilities?.automations !== false)
 
   const [state, setState] = createStore({
     autoselect: !initialDirectory,
@@ -411,27 +413,42 @@ export default function Layout(props: ParentProps) {
       }
 
       const unsub = globalSDK.event.listen((e) => {
-        if (e.details?.type === "worktree.ready") {
+        const details = e.details as { type?: string; properties?: any } | undefined
+        if (details?.type === "worktree.ready") {
           setBusy(e.name, false)
           WorktreeState.ready(e.name)
           return
         }
 
-        if (e.details?.type === "worktree.failed") {
+        if (details?.type === "worktree.failed") {
           setBusy(e.name, false)
-          WorktreeState.failed(e.name, e.details.properties?.message ?? language.t("common.requestFailed"))
+          WorktreeState.failed(e.name, details.properties?.message ?? language.t("common.requestFailed"))
           return
         }
 
-        if (e.details?.type !== "permission.asked" && e.details?.type !== "question.asked") return
+        if (details?.type === "automation.run.finished") {
+          const directory = e.name
+          const automation = (details.properties as { automation?: { id?: string; name?: string } } | undefined)?.automation
+          const run = (details.properties as { run?: { id?: string; status?: string; summary?: string } } | undefined)?.run
+          if (!automation?.id || !run?.id) return
+          const title = run.status === "success" ? "Automation completed" : run.status === "failed" ? "Automation failed" : "Automation finished"
+          const description = run.summary || automation.name || "Automation run finished"
+          const href = automationsHref(directory, automation.id, run.id)
+          if (settings.notifications.agent()) {
+            void platform.notify(title, description, href)
+          }
+          return
+        }
+
+        if (details?.type !== "permission.asked" && details?.type !== "question.asked") return
         const title =
-          e.details.type === "permission.asked"
+          details.type === "permission.asked"
             ? language.t("notification.permission.title")
             : language.t("notification.question.title")
-        const icon = e.details.type === "permission.asked" ? ("checklist" as const) : ("bubble-5" as const)
+        const icon = details.type === "permission.asked" ? ("checklist" as const) : ("bubble-5" as const)
         const directory = e.name
-        const props = e.details.properties
-        if (e.details.type === "permission.asked" && permission.autoResponds(e.details.properties, directory)) return
+        const props = details.properties
+        if (details.type === "permission.asked" && permission.autoResponds(details.properties, directory)) return
 
         const [store] = globalSync.child(directory, { bootstrap: false })
         const session = store.session.find((s) => s.id === props.sessionID)
@@ -440,7 +457,7 @@ export default function Layout(props: ParentProps) {
         const sessionTitle = session?.title ?? language.t("command.session.new")
         const projectName = getFilename(directory)
         const description =
-          e.details.type === "permission.asked"
+          details.type === "permission.asked"
             ? language.t("notification.permission.description", { sessionTitle, projectName })
             : language.t("notification.question.description", { sessionTitle, projectName })
         const href = `/${base64Encode(directory)}/session/${props.sessionID}`
@@ -450,7 +467,7 @@ export default function Layout(props: ParentProps) {
         if (now - lastAlerted < cooldownMs) return
         alertedAtBySession.set(sessionKey, now)
 
-        if (e.details.type === "permission.asked") {
+        if (details.type === "permission.asked") {
           if (settings.sounds.permissionsEnabled()) {
             playSound(soundSrc(settings.sounds.permissions()))
           }
@@ -459,7 +476,7 @@ export default function Layout(props: ParentProps) {
           }
         }
 
-        if (e.details.type === "question.asked") {
+        if (details.type === "question.asked") {
           if (settings.notifications.agent()) {
             void platform.notify(title, description, href)
           }
@@ -947,6 +964,18 @@ export default function Layout(props: ParentProps) {
           const directory = currentDir()
           if (!directory) return
           navigate(dashboardHref(directory))
+        },
+      },
+      {
+        id: "automations.open",
+        title: "Open automations",
+        category: language.t("command.category.view"),
+        keybind: "mod+shift+a",
+        disabled: !automationsEnabled() || !currentDir(),
+        onSelect: () => {
+          const directory = currentDir()
+          if (!directory) return
+          navigate(automationsHref(directory))
         },
       },
       {
@@ -1954,6 +1983,16 @@ export default function Layout(props: ParentProps) {
                               onClick={() => navigateWithSidebarReset(dashboardHref(p().worktree))}
                             >
                               Dashboard
+                            </Button>
+                          </Show>
+                          <Show when={automationsEnabled()}>
+                            <Button
+                              size="large"
+                              variant="secondary"
+                              class="w-full"
+                              onClick={() => navigateWithSidebarReset(automationsHref(p().worktree))}
+                            >
+                              Automations
                             </Button>
                           </Show>
                         </div>

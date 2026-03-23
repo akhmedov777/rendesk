@@ -1,4 +1,5 @@
 export * from "./gen/types.gen.js"
 export * from "./dashboard.js"
+export * from "./automation.js"
 export * from "./visualization-tools.js"
 export { createOpencodeClient, OpencodeClient, type OpencodeClientConfig } from "./manual-client.js"

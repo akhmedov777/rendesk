@@ -323,6 +323,64 @@ type DashboardDirectoryState = {
   lastUsedDashboardID?: string
 }
 
+type AutomationStatus = "active" | "paused"
+type AutomationTrigger = "schedule" | "manual" | "catchup"
+type AutomationRunStatus = "queued" | "running" | "success" | "failed" | "skipped_lock"
+
+type AutomationTemplateID =
+  | "workspace_summary"
+  | "todo_cleanup"
+  | "dependency_scan"
+  | "release_notes"
+  | (string & {})
+
+type Automation = {
+  id: string
+  directory: string
+  name: string
+  prompt: string
+  cron: string
+  timezone: string
+  status: AutomationStatus
+  templateID?: AutomationTemplateID
+  time: {
+    created: number
+    updated: number
+  }
+  lastRunAt?: number
+  nextRunAt: number
+}
+
+type AutomationToolCall = {
+  id: string
+  tool: string
+  input: Record<string, unknown>
+  status: "running" | "completed" | "failed"
+  output?: string
+  error?: string
+  startedAt: number
+  finishedAt?: number
+}
+
+type AutomationRun = {
+  id: string
+  automationID: string
+  directory: string
+  trigger: AutomationTrigger
+  status: AutomationRunStatus
+  time: {
+    created: number
+    started?: number
+    finished?: number
+  }
+  scheduledFor?: number
+  summary?: string
+  output?: string
+  error?: string
+  logs: string[]
+  toolCalls: AutomationToolCall[]
+}
+
 type AnalyticsEvent = {
   id: string
   directory: string
@@ -358,6 +416,8 @@ type PersistedState = {
   permissions: Record<string, PermissionRequest[]>
   questions: Record<string, QuestionRequest[]>
   dashboards: Record<string, DashboardDirectoryState>
+  automations: Record<string, Automation[]>
+  automationRuns: Record<string, AutomationRun[]>
   analyticsEvents: AnalyticsEvent[]
 }
 
@@ -382,6 +442,12 @@ type ActiveRun = {
   sessionID: string
   messageID: string
   assistantMessageID: string
+}
+
+type AutomationQueueItem = {
+  runID: string
+  automationID: string
+  directory: string
 }
 
 type AnthropicModelDefinition = {
@@ -422,6 +488,9 @@ Communication style:
 
 const ANTHROPIC_PROVIDER_ID = "anthropic"
 const DEFAULT_ANTHROPIC_MODEL_ID = "claude-sonnet-4-5-20250929"
+const AUTOMATION_SCHEDULER_TICK_MS = 30_000
+const AUTOMATION_MIN_INTERVAL_MS = 15 * 60 * 1000
+const AUTOMATION_RUN_RETENTION = 200
 const ANTHROPIC_MODEL_CATALOG: AnthropicModelDefinition[] = [
   {
     id: "claude-opus-4-6",
@@ -529,6 +598,8 @@ const defaultState = (): PersistedState => ({
   permissions: {},
   questions: {},
   dashboards: {},
+  automations: {},
+  automationRuns: {},
   analyticsEvents: [],
 })
 
@@ -1011,6 +1082,492 @@ const dashboardListResult = (value: DashboardDirectoryState): DashboardListResul
   lastUsedDashboardID: value.lastUsedDashboardID,
 })
 
+type CronField = {
+  all: boolean
+  values: Set<number>
+}
+
+type ParsedCronExpression = {
+  raw: string
+  minute: CronField
+  hour: CronField
+  dayOfMonth: CronField
+  month: CronField
+  dayOfWeek: CronField
+}
+
+type ZonedDateParts = {
+  year: number
+  month: number
+  day: number
+  hour: number
+  minute: number
+  second: number
+  weekday: number
+}
+
+const ZONED_WEEKDAY: Record<string, number> = {
+  Sun: 0,
+  Mon: 1,
+  Tue: 2,
+  Wed: 3,
+  Thu: 4,
+  Fri: 5,
+  Sat: 6,
+}
+
+const timezoneFormatterCache = new Map<string, Intl.DateTimeFormat>()
+const parsedCronCache = new Map<string, ParsedCronExpression>()
+
+const cronParseInteger = (value: string, label: string) => {
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed)) {
+    throw new Error(`Invalid cron ${label}: "${value}"`)
+  }
+  return parsed
+}
+
+const parseCronField = (input: string, min: number, max: number, label: string, options?: { normalizeSevenToZero?: boolean }) => {
+  const normalized = input.trim()
+  if (!normalized) {
+    throw new Error(`Invalid cron ${label}: missing value`)
+  }
+
+  if (normalized === "*") {
+    return {
+      all: true,
+      values: new Set<number>(),
+    } satisfies CronField
+  }
+
+  const values = new Set<number>()
+  const addRange = (start: number, end: number, step: number) => {
+    if (step <= 0) throw new Error(`Invalid cron ${label}: step must be positive`)
+    if (start < min || end > max || start > end) {
+      throw new Error(`Invalid cron ${label}: range ${start}-${end} is out of bounds (${min}-${max})`)
+    }
+    for (let value = start; value <= end; value += step) {
+      values.add(options?.normalizeSevenToZero && value === 7 ? 0 : value)
+    }
+  }
+
+  for (const token of normalized.split(",")) {
+    const part = token.trim()
+    if (!part) continue
+
+    const [base, stepRaw] = part.split("/")
+    const step = stepRaw ? cronParseInteger(stepRaw, label) : 1
+
+    if (base === "*") {
+      addRange(min, max, step)
+      continue
+    }
+
+    if (base.includes("-")) {
+      const [startRaw, endRaw] = base.split("-")
+      const start = cronParseInteger(startRaw, label)
+      const end = cronParseInteger(endRaw, label)
+      addRange(start, end, step)
+      continue
+    }
+
+    const value = cronParseInteger(base, label)
+    if (value < min || value > max) {
+      throw new Error(`Invalid cron ${label}: ${value} is out of bounds (${min}-${max})`)
+    }
+    values.add(options?.normalizeSevenToZero && value === 7 ? 0 : value)
+  }
+
+  if (values.size === 0) {
+    throw new Error(`Invalid cron ${label}: no values resolved`)
+  }
+
+  return {
+    all: false,
+    values,
+  } satisfies CronField
+}
+
+const parseCronExpression = (expression: string): ParsedCronExpression => {
+  const normalized = expression.trim().replace(/\s+/g, " ")
+  const cached = parsedCronCache.get(normalized)
+  if (cached) return cached
+
+  const parts = normalized.split(" ")
+  if (parts.length !== 5) {
+    throw new Error(`Invalid cron expression "${expression}". Expected five fields (minute hour day month weekday).`)
+  }
+
+  const parsed: ParsedCronExpression = {
+    raw: normalized,
+    minute: parseCronField(parts[0], 0, 59, "minute"),
+    hour: parseCronField(parts[1], 0, 23, "hour"),
+    dayOfMonth: parseCronField(parts[2], 1, 31, "day-of-month"),
+    month: parseCronField(parts[3], 1, 12, "month"),
+    dayOfWeek: parseCronField(parts[4], 0, 7, "day-of-week", { normalizeSevenToZero: true }),
+  }
+  parsedCronCache.set(normalized, parsed)
+  return parsed
+}
+
+const cronMatchesField = (field: CronField, value: number) => field.all || field.values.has(value)
+
+const timezoneFormatter = (timezone: string) => {
+  const cached = timezoneFormatterCache.get(timezone)
+  if (cached) return cached
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    weekday: "short",
+    hour12: false,
+    hourCycle: "h23",
+  })
+  timezoneFormatterCache.set(timezone, formatter)
+  return formatter
+}
+
+const validateTimezone = (timezone: string) => {
+  try {
+    timezoneFormatter(timezone)
+    return true
+  } catch {
+    return false
+  }
+}
+
+const zonedDateParts = (timestamp: number, timezone: string): ZonedDateParts => {
+  const parts = timezoneFormatter(timezone).formatToParts(new Date(timestamp))
+  let year = 0
+  let month = 0
+  let day = 0
+  let hour = 0
+  let minute = 0
+  let second = 0
+  let weekday = 0
+
+  for (const part of parts) {
+    if (part.type === "year") year = Number(part.value)
+    else if (part.type === "month") month = Number(part.value)
+    else if (part.type === "day") day = Number(part.value)
+    else if (part.type === "hour") hour = Number(part.value)
+    else if (part.type === "minute") minute = Number(part.value)
+    else if (part.type === "second") second = Number(part.value)
+    else if (part.type === "weekday") weekday = ZONED_WEEKDAY[part.value] ?? 0
+  }
+
+  return {
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    second,
+    weekday,
+  }
+}
+
+const cronMatchesTimestamp = (cron: ParsedCronExpression, timezone: string, timestamp: number) => {
+  const zoned = zonedDateParts(timestamp, timezone)
+  if (!cronMatchesField(cron.minute, zoned.minute)) return false
+  if (!cronMatchesField(cron.hour, zoned.hour)) return false
+  if (!cronMatchesField(cron.month, zoned.month)) return false
+
+  const dayOfMonthMatches = cronMatchesField(cron.dayOfMonth, zoned.day)
+  const dayOfWeekMatches = cronMatchesField(cron.dayOfWeek, zoned.weekday)
+
+  if (!cron.dayOfMonth.all && !cron.dayOfWeek.all) {
+    return dayOfMonthMatches || dayOfWeekMatches
+  }
+  if (!cron.dayOfMonth.all) return dayOfMonthMatches
+  if (!cron.dayOfWeek.all) return dayOfWeekMatches
+  return true
+}
+
+const nextCronOccurrence = (cron: ParsedCronExpression, timezone: string, afterTimestamp: number) => {
+  const start = Math.floor(afterTimestamp / 60_000) * 60_000 + 60_000
+  const limit = start + 366 * 24 * 60 * 60_000 * 2
+  for (let cursor = start; cursor <= limit; cursor += 60_000) {
+    if (cronMatchesTimestamp(cron, timezone, cursor)) {
+      return cursor
+    }
+  }
+  return undefined
+}
+
+const minimumCronInterval = (cron: ParsedCronExpression, timezone: string, reference: number) => {
+  const first = nextCronOccurrence(cron, timezone, reference - 60_000)
+  if (first === undefined) {
+    throw new Error(`Unable to compute next run for cron "${cron.raw}" in timezone "${timezone}"`)
+  }
+  const second = nextCronOccurrence(cron, timezone, first)
+  if (second === undefined) {
+    throw new Error(`Unable to compute recurring schedule for cron "${cron.raw}" in timezone "${timezone}"`)
+  }
+  return second - first
+}
+
+const validateAutomationSchedule = (cron: string, timezone: string, reference = Date.now()) => {
+  const trimmedTimezone = timezone.trim()
+  if (!trimmedTimezone) {
+    throw new Error("Automation timezone is required")
+  }
+  if (!validateTimezone(trimmedTimezone)) {
+    throw new Error(`Invalid automation timezone "${timezone}"`)
+  }
+
+  const parsedCron = parseCronExpression(cron)
+  const interval = minimumCronInterval(parsedCron, trimmedTimezone, reference)
+  if (interval < AUTOMATION_MIN_INTERVAL_MS) {
+    throw new Error("Automation schedule must run no more frequently than every 15 minutes")
+  }
+
+  const nextRunAt = nextCronOccurrence(parsedCron, trimmedTimezone, reference)
+  if (nextRunAt === undefined) {
+    throw new Error(`Unable to compute next run for cron "${cron}" in timezone "${timezone}"`)
+  }
+
+  return {
+    parsedCron,
+    timezone: trimmedTimezone,
+    nextRunAt,
+  }
+}
+
+const normalizeWorkspaceRoot = (directory: string) => resolve(directory)
+const toComparablePath = (value: string) => (process.platform === "win32" ? value.toLowerCase() : value)
+
+const resolvePathCandidate = (workspaceRoot: string, candidate: string) => {
+  const trimmed = candidate.trim()
+  if (!trimmed || /^[a-z][a-z0-9+\-.]*:\/\//i.test(trimmed)) return
+  if (trimmed === "~") return resolve(homedir())
+  if (trimmed.startsWith("~/")) return resolve(homedir(), trimmed.slice(2))
+  if (trimmed.startsWith("~\\")) return resolve(homedir(), trimmed.slice(2))
+  return resolve(workspaceRoot, trimmed)
+}
+
+const isPathInsideWorkspace = (workspaceRoot: string, candidatePath: string) => {
+  const root = toComparablePath(workspaceRoot.endsWith(sep) ? workspaceRoot : `${workspaceRoot}${sep}`)
+  const candidate = toComparablePath(candidatePath)
+  return candidate === toComparablePath(workspaceRoot) || candidate.startsWith(root)
+}
+
+const commandPathCandidates = (command: string) => {
+  const results: string[] = []
+  const matcher = /"([^"]+)"|'([^']+)'|`([^`]+)`|([^\s]+)/g
+  let match: RegExpExecArray | null = null
+  while ((match = matcher.exec(command))) {
+    const token = match[1] ?? match[2] ?? match[3] ?? match[4] ?? ""
+    if (!token) continue
+    if (token.startsWith("-")) continue
+    if (/^[a-z][a-z0-9+\-.]*:\/\//i.test(token)) continue
+    const looksLikePath =
+      token.startsWith("/") ||
+      token.startsWith("./") ||
+      token.startsWith("../") ||
+      token.startsWith("~/") ||
+      token.startsWith("~\\") ||
+      token.includes("/") ||
+      token.includes("\\")
+    if (!looksLikePath) continue
+    results.push(token)
+  }
+  return results
+}
+
+const collectPathCandidates = (value: unknown, key = "", maxDepth = 4, depth = 0): string[] => {
+  if (depth > maxDepth) return []
+  if (typeof value === "string") {
+    if (key.toLowerCase() === "command") {
+      return commandPathCandidates(value)
+    }
+    const looksLikePathKey = /(path|file|target|output|destination|directory|dir|cwd|root)$/i.test(key)
+    const looksLikePathValue =
+      value.startsWith("/") ||
+      value.startsWith("./") ||
+      value.startsWith("../") ||
+      value.startsWith("~/") ||
+      value.startsWith("~\\") ||
+      value.includes("/") ||
+      value.includes("\\")
+    if (looksLikePathKey || looksLikePathValue) return [value]
+    return []
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => collectPathCandidates(entry, key, maxDepth, depth + 1))
+  }
+  if (!isPlainObject(value)) return []
+  return Object.entries(value).flatMap(([nextKey, entry]) => collectPathCandidates(entry, nextKey, maxDepth, depth + 1))
+}
+
+const firstPathOutsideWorkspace = (workspaceDirectory: string, input: Record<string, unknown>, blockedPath?: string) => {
+  const workspaceRoot = normalizeWorkspaceRoot(workspaceDirectory)
+  const candidates = new Set<string>()
+
+  for (const pattern of permissionPatternsForTool(input, blockedPath)) {
+    if (pattern.trim()) candidates.add(pattern.trim())
+  }
+  for (const candidate of collectPathCandidates(input)) {
+    if (candidate.trim()) candidates.add(candidate.trim())
+  }
+  if (typeof blockedPath === "string" && blockedPath.trim()) {
+    candidates.add(blockedPath.trim())
+  }
+
+  for (const candidate of candidates) {
+    const resolvedPath = resolvePathCandidate(workspaceRoot, candidate)
+    if (!resolvedPath) continue
+    if (!isPathInsideWorkspace(workspaceRoot, resolvedPath)) {
+      return { candidate, resolvedPath, workspaceRoot }
+    }
+  }
+
+  return undefined
+}
+
+const defaultAutomationTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
+
+const coerceAutomationStatus = (value: unknown): AutomationStatus => (value === "paused" ? "paused" : "active")
+
+const coerceAutomationTrigger = (value: unknown): AutomationTrigger => {
+  if (value === "manual" || value === "catchup") return value
+  return "schedule"
+}
+
+const coerceAutomationRunStatus = (value: unknown): AutomationRunStatus => {
+  if (value === "queued" || value === "running" || value === "success" || value === "failed" || value === "skipped_lock") {
+    return value
+  }
+  return "failed"
+}
+
+const coerceAutomation = (value: unknown, directory: string): Automation | undefined => {
+  if (!isPlainObject(value)) return
+  const id = typeof value.id === "string" && value.id.trim() ? value.id.trim() : undefined
+  const name = typeof value.name === "string" && value.name.trim() ? value.name.trim() : undefined
+  const prompt = typeof value.prompt === "string" && value.prompt.trim() ? value.prompt.trim() : undefined
+  if (!id || !name || !prompt) return
+
+  const fallbackTimezone = defaultAutomationTimezone()
+  let cron = typeof value.cron === "string" && value.cron.trim() ? value.cron.trim() : "0 * * * *"
+  let timezone = typeof value.timezone === "string" && value.timezone.trim() ? value.timezone.trim() : fallbackTimezone
+  let nextRunAt = typeof value.nextRunAt === "number" && Number.isFinite(value.nextRunAt) ? value.nextRunAt : undefined
+  let status = coerceAutomationStatus(value.status)
+
+  try {
+    const validated = validateAutomationSchedule(cron, timezone)
+    if (nextRunAt === undefined) nextRunAt = validated.nextRunAt
+  } catch {
+    cron = "0 * * * *"
+    timezone = fallbackTimezone
+    const validated = validateAutomationSchedule(cron, timezone)
+    nextRunAt = validated.nextRunAt
+    status = "paused"
+  }
+
+  const createdAt =
+    isPlainObject(value.time) && typeof value.time.created === "number" && Number.isFinite(value.time.created)
+      ? value.time.created
+      : Date.now()
+  const updatedAt =
+    isPlainObject(value.time) && typeof value.time.updated === "number" && Number.isFinite(value.time.updated)
+      ? value.time.updated
+      : createdAt
+
+  return {
+    id,
+    directory: typeof value.directory === "string" && value.directory.trim() ? value.directory : directory,
+    name,
+    prompt,
+    cron,
+    timezone,
+    status,
+    templateID: typeof value.templateID === "string" ? value.templateID : undefined,
+    time: {
+      created: createdAt,
+      updated: updatedAt,
+    },
+    lastRunAt: typeof value.lastRunAt === "number" && Number.isFinite(value.lastRunAt) ? value.lastRunAt : undefined,
+    nextRunAt: nextRunAt!,
+  }
+}
+
+const coerceAutomationToolCall = (value: unknown): AutomationToolCall | undefined => {
+  if (!isPlainObject(value)) return
+  const id = typeof value.id === "string" && value.id.trim() ? value.id : undefined
+  const tool = typeof value.tool === "string" && value.tool.trim() ? value.tool : undefined
+  const startedAt = typeof value.startedAt === "number" && Number.isFinite(value.startedAt) ? value.startedAt : undefined
+  if (!id || !tool || startedAt === undefined) return
+
+  const status = (() => {
+    if (value.status === "running" || value.status === "completed" || value.status === "failed") return value.status
+    return "failed"
+  })()
+
+  return {
+    id,
+    tool,
+    input: coerceRecord(value.input),
+    status,
+    output: typeof value.output === "string" ? value.output : undefined,
+    error: typeof value.error === "string" ? value.error : undefined,
+    startedAt,
+    finishedAt: typeof value.finishedAt === "number" && Number.isFinite(value.finishedAt) ? value.finishedAt : undefined,
+  }
+}
+
+const coerceAutomationRun = (value: unknown, fallbackAutomationID: string, fallbackDirectory: string): AutomationRun | undefined => {
+  if (!isPlainObject(value)) return
+  const id = typeof value.id === "string" && value.id.trim() ? value.id : undefined
+  if (!id) return
+
+  const createdAt =
+    isPlainObject(value.time) && typeof value.time.created === "number" && Number.isFinite(value.time.created)
+      ? value.time.created
+      : Date.now()
+
+  const logs = Array.isArray(value.logs)
+    ? value.logs.filter((entry): entry is string => typeof entry === "string").slice(-500)
+    : []
+
+  const toolCalls = Array.isArray(value.toolCalls)
+    ? value.toolCalls
+        .map((entry) => coerceAutomationToolCall(entry))
+        .filter((entry): entry is AutomationToolCall => !!entry)
+        .slice(-500)
+    : []
+
+  return {
+    id,
+    automationID:
+      typeof value.automationID === "string" && value.automationID.trim() ? value.automationID : fallbackAutomationID,
+    directory: typeof value.directory === "string" && value.directory.trim() ? value.directory : fallbackDirectory,
+    trigger: coerceAutomationTrigger(value.trigger),
+    status: coerceAutomationRunStatus(value.status),
+    time: {
+      created: createdAt,
+      started:
+        isPlainObject(value.time) && typeof value.time.started === "number" && Number.isFinite(value.time.started)
+          ? value.time.started
+          : undefined,
+      finished:
+        isPlainObject(value.time) && typeof value.time.finished === "number" && Number.isFinite(value.time.finished)
+          ? value.time.finished
+          : undefined,
+    },
+    scheduledFor: typeof value.scheduledFor === "number" && Number.isFinite(value.scheduledFor) ? value.scheduledFor : undefined,
+    summary: typeof value.summary === "string" ? value.summary : undefined,
+    output: typeof value.output === "string" ? value.output : undefined,
+    error: typeof value.error === "string" ? value.error : undefined,
+    logs,
+    toolCalls,
+  }
+}
+
 const parseJsonString = (value: string) => {
   try {
     return JSON.parse(value)
@@ -1078,6 +1635,37 @@ export async function createLocalService(input: {
   const statePath = join(input.userDataPath, "backoffice-state.json")
   const defaults = defaultState()
   const initial = await readJson(statePath, defaults)
+  const initialAutomations = (() => {
+    if (!isPlainObject(initial.automations)) return {}
+    const next: Record<string, Automation[]> = {}
+    for (const [directory, value] of Object.entries(initial.automations)) {
+      if (!Array.isArray(value)) continue
+      const automations = value
+        .map((entry) => coerceAutomation(entry, directory))
+        .filter((entry): entry is Automation => !!entry)
+        .sort((a, b) => (b.time.updated ?? b.time.created) - (a.time.updated ?? a.time.created))
+      next[directory] = automations
+    }
+    return next
+  })()
+  const initialAutomationRuns = (() => {
+    if (!isPlainObject(initial.automationRuns)) return {}
+    const next: Record<string, AutomationRun[]> = {}
+    for (const [automationID, value] of Object.entries(initial.automationRuns)) {
+      if (!Array.isArray(value)) continue
+      const fallbackDirectory =
+        Object.values(initialAutomations)
+          .flat()
+          .find((automation) => automation.id === automationID)?.directory ?? ""
+      const runs = value
+        .map((entry) => coerceAutomationRun(entry, automationID, fallbackDirectory))
+        .filter((entry): entry is AutomationRun => !!entry)
+        .sort((a, b) => (b.time.created ?? 0) - (a.time.created ?? 0))
+        .slice(0, AUTOMATION_RUN_RETENTION)
+      next[automationID] = runs
+    }
+    return next
+  })()
   const state: PersistedState = {
     ...defaults,
     ...initial,
@@ -1099,6 +1687,8 @@ export async function createLocalService(input: {
     permissions: initial.permissions ?? {},
     questions: initial.questions ?? {},
     dashboards: initial.dashboards ?? {},
+    automations: initialAutomations,
+    automationRuns: initialAutomationRuns,
     analyticsEvents: Array.isArray(initial.analyticsEvents) ? initial.analyticsEvents : [],
   }
 
@@ -1241,6 +1831,13 @@ export async function createLocalService(input: {
   const pyodideMcpServer = input.sendPyodideRequest
     ? createPyodideMcpServer(input.sendPyodideRequest, input.sendEditorToolRequest)
     : undefined
+  const automationQueue: AutomationQueueItem[] = []
+  const queuedAutomationIDs = new Set<string>()
+  const activeAutomationLocks = new Set<string>()
+  const activeAutomationControllers = new Map<string, AbortController>()
+  let activeGlobalAutomationRunID: string | undefined
+  let automationProcessorRunning = false
+  let automationSchedulerInterval: ReturnType<typeof setInterval> | undefined
   let savePending: Promise<void> | undefined
 
   const scheduleSave = () => {
@@ -1322,6 +1919,599 @@ export async function createLocalService(input: {
     scoped.dashboards.unshift(dashboard)
     scoped.lastUsedDashboardID = dashboard.id
     return dashboard
+  }
+
+  const automationStateFor = (directory: string) => {
+    const existing = state.automations[directory]
+    if (existing) return existing
+    const created: Automation[] = []
+    state.automations[directory] = created
+    return created
+  }
+
+  const automationRunsFor = (automationID: string) => {
+    const existing = state.automationRuns[automationID]
+    if (existing) return existing
+    const created: AutomationRun[] = []
+    state.automationRuns[automationID] = created
+    return created
+  }
+
+  const trimAutomationRuns = (automationID: string) => {
+    const runs = automationRunsFor(automationID)
+    if (runs.length <= AUTOMATION_RUN_RETENTION) return
+    runs.splice(AUTOMATION_RUN_RETENTION)
+  }
+
+  const listAutomations = (directory: string, options?: { search?: string; status?: AutomationStatus | "all" }) => {
+    const search = options?.search?.trim().toLowerCase()
+    return automationStateFor(directory)
+      .filter((automation) => {
+        if (!search) return true
+        return (
+          automation.name.toLowerCase().includes(search) ||
+          automation.prompt.toLowerCase().includes(search) ||
+          automation.cron.toLowerCase().includes(search)
+        )
+      })
+      .filter((automation) => {
+        if (!options?.status || options.status === "all") return true
+        return automation.status === options.status
+      })
+      .slice()
+      .sort((a, b) => (b.time.updated ?? b.time.created) - (a.time.updated ?? a.time.created))
+  }
+
+  const findAutomation = (directory: string, automationID?: string) => {
+    if (!automationID) return undefined
+    return automationStateFor(directory).find((automation) => automation.id === automationID)
+  }
+
+  const findAutomationByID = (automationID: string) => {
+    for (const [directory, automations] of Object.entries(state.automations)) {
+      const automation = automations.find((entry) => entry.id === automationID)
+      if (automation) return { directory, automation }
+    }
+    return undefined
+  }
+
+  const findAutomationRun = (automationID: string, runID?: string) => {
+    if (!runID) return undefined
+    return automationRunsFor(automationID).find((run) => run.id === runID)
+  }
+
+  const createAutomationRecord = (directory: string, input: {
+    name: string
+    prompt: string
+    cron: string
+    timezone?: string
+    status?: AutomationStatus
+    templateID?: string
+  }) => {
+    const name = input.name.trim()
+    const prompt = input.prompt.trim()
+    if (!name) throw new Error("Automation name is required")
+    if (!prompt) throw new Error("Automation prompt is required")
+
+    const timezone = input.timezone?.trim() || defaultAutomationTimezone()
+    const validated = validateAutomationSchedule(input.cron, timezone, now())
+    const createdAt = now()
+    const automation: Automation = {
+      id: `automation_${randomUUID()}`,
+      directory,
+      name,
+      prompt,
+      cron: input.cron.trim(),
+      timezone: validated.timezone,
+      status: input.status === "paused" ? "paused" : "active",
+      templateID: input.templateID,
+      time: {
+        created: createdAt,
+        updated: createdAt,
+      },
+      lastRunAt: undefined,
+      nextRunAt: validated.nextRunAt,
+    }
+    automationStateFor(directory).unshift(automation)
+    return automation
+  }
+
+  const updateAutomationRecord = (automation: Automation, patch: {
+    name?: string
+    prompt?: string
+    cron?: string
+    timezone?: string
+    status?: AutomationStatus
+    templateID?: string | null
+  }) => {
+    const nextName = patch.name === undefined ? automation.name : patch.name.trim()
+    const nextPrompt = patch.prompt === undefined ? automation.prompt : patch.prompt.trim()
+    if (!nextName) throw new Error("Automation name is required")
+    if (!nextPrompt) throw new Error("Automation prompt is required")
+
+    const nextCron = patch.cron === undefined ? automation.cron : patch.cron.trim()
+    const nextTimezone = patch.timezone === undefined ? automation.timezone : patch.timezone.trim() || defaultAutomationTimezone()
+    const scheduleChanged = nextCron !== automation.cron || nextTimezone !== automation.timezone
+    const statusChanged = patch.status !== undefined && patch.status !== automation.status
+
+    automation.name = nextName
+    automation.prompt = nextPrompt
+    automation.cron = nextCron
+    automation.timezone = nextTimezone
+    if (patch.status) {
+      automation.status = patch.status
+    }
+    if (patch.templateID !== undefined) {
+      automation.templateID = patch.templateID ?? undefined
+    }
+
+    if (scheduleChanged || (statusChanged && automation.status === "active")) {
+      const validated = validateAutomationSchedule(automation.cron, automation.timezone, now())
+      if (automation.status === "active") {
+        automation.nextRunAt = validated.nextRunAt
+      }
+    }
+    automation.time.updated = now()
+    return automation
+  }
+
+  const appendAutomationRunLog = (run: AutomationRun, line: string) => {
+    const cleaned = line.trim()
+    if (!cleaned) return
+    run.logs.push(cleaned)
+    if (run.logs.length > 500) {
+      run.logs.splice(0, run.logs.length - 500)
+    }
+  }
+
+  const createQueuedAutomationRun = (automation: Automation, trigger: AutomationTrigger, scheduledFor?: number) => {
+    const createdAt = now()
+    const run: AutomationRun = {
+      id: `automation_run_${randomUUID()}`,
+      automationID: automation.id,
+      directory: automation.directory,
+      trigger,
+      status: "queued",
+      time: {
+        created: createdAt,
+      },
+      scheduledFor,
+      logs: [],
+      toolCalls: [],
+    }
+    const runs = automationRunsFor(automation.id)
+    runs.unshift(run)
+    trimAutomationRuns(automation.id)
+    return run
+  }
+
+  const createSkippedLockRun = (automation: Automation, trigger: AutomationTrigger, scheduledFor?: number) => {
+    const createdAt = now()
+    const run: AutomationRun = {
+      id: `automation_run_${randomUUID()}`,
+      automationID: automation.id,
+      directory: automation.directory,
+      trigger,
+      status: "skipped_lock",
+      time: {
+        created: createdAt,
+        started: createdAt,
+        finished: createdAt,
+      },
+      scheduledFor,
+      summary: "Skipped because another run for this automation is active",
+      logs: ["Skipped due to active automation lock"],
+      toolCalls: [],
+    }
+    const runs = automationRunsFor(automation.id)
+    runs.unshift(run)
+    trimAutomationRuns(automation.id)
+    return run
+  }
+
+  const emitAutomationUpdated = (automation: Automation, reason?: string) => {
+    emit(automation.directory, {
+      type: "automation.updated",
+      properties: {
+        automation,
+        ...(reason ? { reason } : {}),
+      },
+    })
+  }
+
+  const markAutomationNextRun = (automation: Automation, reference = now()) => {
+    const validated = validateAutomationSchedule(automation.cron, automation.timezone, reference)
+    automation.nextRunAt = validated.nextRunAt
+    automation.time.updated = now()
+  }
+
+  const emitAutomationRunStarted = (automation: Automation, run: AutomationRun) => {
+    emit(automation.directory, {
+      type: "automation.run.started",
+      properties: {
+        automation,
+        run,
+      },
+    })
+  }
+
+  const emitAutomationRunFinished = (automation: Automation, run: AutomationRun) => {
+    emit(automation.directory, {
+      type: "automation.run.finished",
+      properties: {
+        automation,
+        run,
+      },
+    })
+  }
+
+  const executeAutomationRun = async (automation: Automation, run: AutomationRun) => {
+    const anthropicCredential = await resolveAnthropicCredential()
+    if (!anthropicCredential) {
+      throw new Error(
+        "Renvel AI is unavailable because managed infrastructure credentials are missing. Contact your administrator.",
+      )
+    }
+
+    const sdk = await import("@anthropic-ai/claude-agent-sdk")
+    const pathToClaudeCodeExecutable = await resolveClaudeCodeExecutablePath()
+    const claudeRuntimeEnv = {
+      ...process.env,
+      ANTHROPIC_API_KEY: anthropicCredential.key,
+    }
+    const spawnClaudeCodeProcess: AgentOptions["spawnClaudeCodeProcess"] = ({ args, cwd, env, signal }) => {
+      const { CLAUDECODE: _drop, ...cleanEnv } = env as Record<string, string | undefined>
+      const child = spawn(process.execPath, args, {
+        cwd,
+        env: {
+          ...cleanEnv,
+          ELECTRON_RUN_AS_NODE: "1",
+        },
+        signal,
+        stdio: ["pipe", "pipe", "ignore"],
+        windowsHide: true,
+      })
+
+      return {
+        stdin: child.stdin,
+        stdout: child.stdout,
+        get killed() {
+          return child.killed
+        },
+        get exitCode() {
+          return child.exitCode
+        },
+        kill: child.kill.bind(child),
+        on: child.on.bind(child),
+        once: child.once.bind(child),
+        off: child.off.bind(child),
+      }
+    }
+
+    const getOrCreateToolCall = (toolUseID: string, toolName: string, toolInput: Record<string, unknown>) => {
+      const existing = run.toolCalls.find((entry) => entry.id === toolUseID)
+      if (existing) return existing
+      const created: AutomationToolCall = {
+        id: toolUseID,
+        tool: toolName,
+        input: toolInput,
+        status: "running",
+        startedAt: now(),
+      }
+      run.toolCalls.push(created)
+      appendAutomationRunLog(run, `Tool started: ${normalizeToolName(toolName)}`)
+      void scheduleSave()
+      return created
+    }
+
+    const completeToolCall = (toolUseID: string, update: Partial<AutomationToolCall>) => {
+      const existing = run.toolCalls.find((entry) => entry.id === toolUseID)
+      if (!existing) return
+      if (update.status) existing.status = update.status
+      if (update.output !== undefined) existing.output = update.output
+      if (update.error !== undefined) existing.error = update.error
+      existing.finishedAt = now()
+      if (existing.status === "completed") {
+        appendAutomationRunLog(run, `Tool completed: ${normalizeToolName(existing.tool)}`)
+      } else if (existing.status === "failed") {
+        appendAutomationRunLog(run, `Tool failed: ${normalizeToolName(existing.tool)}`)
+      }
+      void scheduleSave()
+    }
+
+    const canUseTool: CanUseTool = async (toolName, toolInput, options) => {
+      const normalizedInput = coerceRecord(toolInput)
+      getOrCreateToolCall(options.toolUseID, toolName, normalizedInput)
+
+      const violation = firstPathOutsideWorkspace(automation.directory, normalizedInput, options.blockedPath)
+      if (violation) {
+        const message = `Denied tool ${toolName}: path "${violation.candidate}" resolves outside workspace`
+        appendAutomationRunLog(run, message)
+        completeToolCall(options.toolUseID, {
+          status: "failed",
+          error: message,
+        })
+        return {
+          behavior: "deny",
+          message,
+          interrupt: true,
+          toolUseID: options.toolUseID,
+        } satisfies PermissionResult
+      }
+
+      return {
+        behavior: "allow",
+        updatedInput: normalizedInput,
+        toolUseID: options.toolUseID,
+      } satisfies PermissionResult
+    }
+
+    const hooks: NonNullable<AgentOptions["hooks"]> = {
+      PreToolUse: [
+        {
+          hooks: [
+            async (hookInput, toolUseID) => {
+              if (!toolUseID) return { continue: true }
+              const inputRecord = hookInput as PreToolUseHookInput
+              getOrCreateToolCall(toolUseID, inputRecord.tool_name, coerceRecord(inputRecord.tool_input))
+              return { continue: true }
+            },
+          ],
+        },
+      ],
+      PostToolUse: [
+        {
+          hooks: [
+            async (hookInput, toolUseID) => {
+              if (!toolUseID) return { continue: true }
+              const resultInput = hookInput as PostToolUseHookInput
+              completeToolCall(toolUseID, {
+                status: "completed",
+                output: serializeToolOutput(resultInput.tool_response),
+              })
+              return { continue: true }
+            },
+          ],
+        },
+      ],
+      PostToolUseFailure: [
+        {
+          hooks: [
+            async (hookInput, toolUseID) => {
+              if (!toolUseID) return { continue: true }
+              const failureInput = hookInput as PostToolUseFailureHookInput
+              completeToolCall(toolUseID, {
+                status: "failed",
+                error: failureInput.error,
+              })
+              return { continue: true }
+            },
+          ],
+        },
+      ],
+    }
+
+    const modelID = (() => {
+      if (typeof state.config.model !== "string") return DEFAULT_ANTHROPIC_MODEL_ID
+      const [, configuredModelID] = state.config.model.split("/")
+      return configuredModelID || DEFAULT_ANTHROPIC_MODEL_ID
+    })()
+
+    const controller = new AbortController()
+    activeAutomationControllers.set(run.id, controller)
+    const visualizationMcpServer = createVisualizationMcpServer(() => buildAnalyticsSnapshot(automation.directory))
+
+    const iterator = sdk.query({
+      prompt: automation.prompt,
+      options: {
+        abortController: controller,
+        canUseTool,
+        cwd: automation.directory,
+        env: claudeRuntimeEnv,
+        hooks,
+        includePartialMessages: true,
+        mcpServers: {
+          visualization: visualizationMcpServer,
+        },
+        model: modelID,
+        pathToClaudeCodeExecutable,
+        permissionMode: "default",
+        settingSources: [],
+        spawnClaudeCodeProcess,
+        systemPrompt: `${RENVEL_AI_SYSTEM_PROMPT}
+
+Automation execution mode:
+- You are running inside a scheduled desktop automation.
+- Complete the task end-to-end without asking the user follow-up questions.
+- Keep output concise and actionable.
+- Stay strictly within the workspace directory for any file or system operation.`,
+      },
+    })
+
+    let result: SDKResultMessage | undefined
+    let output = ""
+    let hasStreamDelta = false
+
+    try {
+      for await (const item of iterator) {
+        const streamEvent = extractStreamEvent(item)
+        if (streamEvent?.textDelta) {
+          hasStreamDelta = true
+          output += streamEvent.textDelta
+          run.output = output
+          void scheduleSave()
+          continue
+        }
+
+        if (item.type === "assistant" && !hasStreamDelta) {
+          const text = extractAssistantText(item.message)
+          if (text) {
+            output += text
+            run.output = output
+            void scheduleSave()
+          }
+          continue
+        }
+
+        if (item.type === "system" && item.subtype === "local_command_output" && item.content) {
+          appendAutomationRunLog(run, item.content)
+          continue
+        }
+
+        if (item.type === "result") {
+          result = item
+        }
+      }
+    } finally {
+      activeAutomationControllers.delete(run.id)
+      try {
+        iterator.close()
+      } catch {
+        // Ignore cleanup errors during shutdown.
+      }
+    }
+
+    if (result?.subtype !== "success") {
+      const errorMessage = result?.errors?.join("\n") || "Automation execution failed"
+      return {
+        status: "failed" as const,
+        output,
+        error: errorMessage,
+      }
+    }
+
+    return {
+      status: "success" as const,
+      output,
+      error: undefined,
+    }
+  }
+
+  const finalizeAutomationRun = async (automation: Automation, run: AutomationRun, result: {
+    status: "success" | "failed"
+    output: string
+    error?: string
+  }) => {
+    run.status = result.status
+    run.time.finished = now()
+    run.output = result.output
+    run.error = result.error
+    run.summary =
+      summaryFromText(result.status === "failed" ? result.error || result.output : result.output) ||
+      (result.status === "failed" ? "Automation run failed" : "Automation run completed")
+
+    automation.lastRunAt = run.time.started ?? run.time.finished
+    if (automation.status === "active") {
+      markAutomationNextRun(automation, now())
+    }
+    automation.time.updated = now()
+
+    trimAutomationRuns(automation.id)
+    await scheduleSave()
+    emitAutomationRunFinished(automation, run)
+    emitAutomationUpdated(automation, "run_finished")
+  }
+
+  const processAutomationQueue = async () => {
+    if (automationProcessorRunning) return
+    automationProcessorRunning = true
+
+    try {
+      while (automationQueue.length > 0) {
+        if (activeGlobalAutomationRunID) return
+        const next = automationQueue.shift()
+        if (!next) continue
+        queuedAutomationIDs.delete(next.automationID)
+
+        const located = findAutomationByID(next.automationID)
+        if (!located) continue
+        const automation = located.automation
+        const run = findAutomationRun(next.automationID, next.runID)
+        if (!run) continue
+
+        if (activeAutomationLocks.has(automation.id)) {
+          run.status = "skipped_lock"
+          const completedAt = now()
+          run.time.started = run.time.started ?? completedAt
+          run.time.finished = completedAt
+          run.summary = "Skipped because another run for this automation is active"
+          appendAutomationRunLog(run, "Skipped due to active automation lock")
+          await scheduleSave()
+          emitAutomationRunFinished(automation, run)
+          emitAutomationUpdated(automation, "run_skipped_lock")
+          continue
+        }
+
+        activeAutomationLocks.add(automation.id)
+        activeGlobalAutomationRunID = run.id
+        run.status = "running"
+        run.time.started = now()
+        appendAutomationRunLog(run, `Run started (${run.trigger})`)
+        await scheduleSave()
+        emitAutomationRunStarted(automation, run)
+
+        try {
+          const result = await executeAutomationRun(automation, run)
+          await finalizeAutomationRun(automation, run, result)
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          appendAutomationRunLog(run, message)
+          await finalizeAutomationRun(automation, run, {
+            status: "failed",
+            output: run.output ?? "",
+            error: message,
+          })
+        } finally {
+          activeAutomationLocks.delete(automation.id)
+          if (activeGlobalAutomationRunID === run.id) {
+            activeGlobalAutomationRunID = undefined
+          }
+        }
+      }
+    } finally {
+      automationProcessorRunning = false
+    }
+  }
+
+  const enqueueAutomationRun = async (automation: Automation, trigger: AutomationTrigger, scheduledFor?: number) => {
+    if (activeAutomationLocks.has(automation.id) || queuedAutomationIDs.has(automation.id)) {
+      const skipped = createSkippedLockRun(automation, trigger, scheduledFor)
+      await scheduleSave()
+      emitAutomationRunFinished(automation, skipped)
+      emitAutomationUpdated(automation, "run_skipped_lock")
+      return skipped
+    }
+
+    const run = createQueuedAutomationRun(automation, trigger, scheduledFor)
+    queuedAutomationIDs.add(automation.id)
+    if (trigger !== "manual" && automation.status === "active") {
+      markAutomationNextRun(automation, now())
+    }
+    automation.time.updated = now()
+    await scheduleSave()
+    emitAutomationUpdated(automation, "run_queued")
+    void processAutomationQueue()
+    return run
+  }
+
+  const schedulerTick = async (trigger: AutomationTrigger = "schedule") => {
+    const due: Automation[] = []
+    const timestamp = now()
+    for (const automations of Object.values(state.automations)) {
+      for (const automation of automations) {
+        if (automation.status !== "active") continue
+        if (automation.nextRunAt > timestamp) continue
+        due.push(automation)
+      }
+    }
+
+    for (const automation of due) {
+      await enqueueAutomationRun(automation, trigger, automation.nextRunAt)
+    }
+  }
+
+  const startupCatchupOnce = async () => {
+    await schedulerTick("catchup")
   }
 
   const buildAnalyticsSnapshot = (directory: string): AnalyticsSnapshot => {
@@ -2805,6 +3995,147 @@ export async function createLocalService(input: {
         await scheduleSave()
         return { data: next }
       }
+      case "automation.list": {
+        if (!directory) return { data: { automations: [] as Automation[] } }
+        const search = typeof request.input?.search === "string" ? request.input.search : undefined
+        const status =
+          request.input?.status === "active" || request.input?.status === "paused" || request.input?.status === "all"
+            ? request.input.status
+            : undefined
+        const automations = listAutomations(directory, {
+          search,
+          status,
+        })
+        return { data: { automations } }
+      }
+      case "automation.get": {
+        if (!directory) return { data: undefined }
+        const automationID = String(request.input?.automationID ?? "")
+        return { data: findAutomation(directory, automationID) }
+      }
+      case "automation.create": {
+        if (!directory) throw new Error("Missing directory for automation.create")
+        try {
+          const automation = createAutomationRecord(directory, {
+            name: String(request.input?.name ?? ""),
+            prompt: String(request.input?.prompt ?? ""),
+            cron: String(request.input?.cron ?? ""),
+            timezone: typeof request.input?.timezone === "string" ? request.input.timezone : defaultAutomationTimezone(),
+            status: request.input?.status === "paused" ? "paused" : "active",
+            templateID: typeof request.input?.templateID === "string" ? request.input.templateID : undefined,
+          })
+          await scheduleSave()
+          emitAutomationUpdated(automation, "created")
+          return { data: automation }
+        } catch (error) {
+          return {
+            error: {
+              message: error instanceof Error ? error.message : String(error),
+            },
+          }
+        }
+      }
+      case "automation.update": {
+        if (!directory) throw new Error("Missing directory for automation.update")
+        const automationID = String(request.input?.automationID ?? "")
+        const automation = findAutomation(directory, automationID)
+        if (!automation) throw new Error(`Unknown automation ${automationID}`)
+        try {
+          updateAutomationRecord(automation, {
+            name: typeof request.input?.name === "string" ? request.input.name : undefined,
+            prompt: typeof request.input?.prompt === "string" ? request.input.prompt : undefined,
+            cron: typeof request.input?.cron === "string" ? request.input.cron : undefined,
+            timezone: typeof request.input?.timezone === "string" ? request.input.timezone : undefined,
+            status: request.input?.status === "paused" ? "paused" : request.input?.status === "active" ? "active" : undefined,
+            templateID:
+              typeof request.input?.templateID === "string" ? request.input.templateID : request.input?.templateID === null ? null : undefined,
+          })
+
+          await scheduleSave()
+          emitAutomationUpdated(automation, "updated")
+          return { data: automation }
+        } catch (error) {
+          return {
+            error: {
+              message: error instanceof Error ? error.message : String(error),
+            },
+          }
+        }
+      }
+      case "automation.delete": {
+        if (!directory) throw new Error("Missing directory for automation.delete")
+        const automationID = String(request.input?.automationID ?? "")
+        const automations = automationStateFor(directory)
+        const index = automations.findIndex((automation) => automation.id === automationID)
+        if (index === -1) return { data: false }
+        if (activeAutomationLocks.has(automationID)) {
+          throw new Error("Cannot delete automation while a run is active")
+        }
+
+        automations.splice(index, 1)
+        delete state.automationRuns[automationID]
+        for (let index = automationQueue.length - 1; index >= 0; index -= 1) {
+          if (automationQueue[index].automationID === automationID) {
+            automationQueue.splice(index, 1)
+          }
+        }
+        queuedAutomationIDs.delete(automationID)
+
+        await scheduleSave()
+        emit(directory, {
+          type: "automation.updated",
+          properties: {
+            automationID,
+            deleted: true,
+          },
+        })
+        return { data: true }
+      }
+      case "automation.run": {
+        if (!directory) throw new Error("Missing directory for automation.run")
+        const automationID = String(request.input?.automationID ?? "")
+        const automation = findAutomation(directory, automationID)
+        if (!automation) throw new Error(`Unknown automation ${automationID}`)
+        const run = await enqueueAutomationRun(automation, "manual")
+        return { data: run }
+      }
+      case "automation.run.list": {
+        if (!directory) return { data: [] as AutomationRun[] }
+        const automationID = String(request.input?.automationID ?? "")
+        const automation = findAutomation(directory, automationID)
+        if (!automation) return { data: [] as AutomationRun[] }
+        const status =
+          request.input?.status === "queued" ||
+          request.input?.status === "running" ||
+          request.input?.status === "success" ||
+          request.input?.status === "failed" ||
+          request.input?.status === "skipped_lock"
+            ? request.input.status
+            : undefined
+        const parsedLimit = Number(request.input?.limit ?? AUTOMATION_RUN_RETENTION)
+        const limit = Number.isFinite(parsedLimit) ? Math.max(1, Math.min(AUTOMATION_RUN_RETENTION, Math.floor(parsedLimit))) : 50
+        const runs = automationRunsFor(automationID)
+          .filter((run) => (status ? run.status === status : true))
+          .slice(0, limit)
+        return { data: runs }
+      }
+      case "automation.run.get": {
+        if (!directory) return { data: undefined }
+        const automationID = String(request.input?.automationID ?? "")
+        const runID = String(request.input?.runID ?? "")
+        const automation = findAutomation(directory, automationID)
+        if (automation) {
+          return { data: findAutomationRun(automation.id, runID) }
+        }
+        if (!runID) return { data: undefined }
+        const scopedAutomationIDs = new Set(automationStateFor(directory).map((entry) => entry.id))
+        for (const [nextAutomationID, runs] of Object.entries(state.automationRuns)) {
+          if (!scopedAutomationIDs.has(nextAutomationID)) continue
+          const found = runs.find((run) => run.id === runID)
+          if (found) return { data: found }
+        }
+        return { data: undefined }
+      }
       case "vcs.get":
         return { data: undefined }
       case "file.list":
@@ -2848,6 +4179,15 @@ export async function createLocalService(input: {
         return { error: { message: `Unsupported action: ${request.action}` } }
     }
   }
+
+  await startupCatchupOnce().catch((error) => {
+    console.error("[desktop-service] automation startup catch-up failed:", error)
+  })
+  automationSchedulerInterval = setInterval(() => {
+    void schedulerTick("schedule").catch((error) => {
+      console.error("[desktop-service] automation scheduler tick failed:", error)
+    })
+  }, AUTOMATION_SCHEDULER_TICK_MS)
 
   const server = createServer((request, response) => {
     void (async () => {
@@ -3051,6 +4391,14 @@ export async function createLocalService(input: {
     async close() {
       for (const run of activeRuns.values()) {
         run.controller.abort()
+      }
+      for (const controller of activeAutomationControllers.values()) {
+        controller.abort()
+      }
+      activeAutomationControllers.clear()
+      if (automationSchedulerInterval) {
+        clearInterval(automationSchedulerInterval)
+        automationSchedulerInterval = undefined
       }
       activeEditorStates.clear()
       stopAllWatchers()

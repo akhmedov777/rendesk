@@ -108,6 +108,7 @@ const platform: Platform = {
   capabilities: {
     dashboard: false,
     visualization: false,
+    automations: false,
   },
   version: pkg.version,
   openLink,

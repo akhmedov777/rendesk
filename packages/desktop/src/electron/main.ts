@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, nativeTheme, shell } from "electron"
+import { app, BrowserWindow, Menu, Tray, clipboard, dialog, globalShortcut, ipcMain, nativeImage, nativeTheme, screen, shell } from "electron"
 import { autoUpdater } from "electron-updater"
 import { spawn, spawnSync } from "node:child_process"
 import { fileURLToPath } from "node:url"
@@ -22,7 +22,19 @@ const preloadPath = join(currentDir, "preload.js")
 const rendererIndex = join(currentDir, "..", "renderer", "index.html")
 const devServerUrl = process.env.VITE_DEV_SERVER_URL
 
+const IS_MAC = process.platform === "darwin"
+
+// Overlay mode constants
+const NORMAL_WIDTH = 1460
+const NORMAL_HEIGHT = 980
+const OVERLAY_WIDTH = 1040
+const OVERLAY_HEIGHT = 720
+
 let mainWindow: any
+let tray: Tray | null = null
+let isOverlayMode = false
+let dragStartPos: { x: number; y: number } | null = null
+let currentOverlayShortcut: string | null = null
 let localService: Awaited<ReturnType<typeof createLocalService>> | undefined
 let editorToolCounter = 0
 let pyodideRequestCounter = 0
@@ -199,7 +211,17 @@ const createMenu = () => {
     },
     {
       label: "Window",
-      submenu: [{ role: "minimize" }, { role: "zoom" }],
+      submenu: [
+        { role: "minimize" },
+        { role: "zoom" },
+        { type: "separator" },
+        {
+          label: "Overlay Mode",
+          type: "checkbox",
+          checked: isOverlayMode,
+          click: (item: any) => applyOverlayMode(item.checked),
+        },
+      ],
     },
     {
       label: "Help",
@@ -291,6 +313,7 @@ ipcMain.handle("backoffice:bootstrap", async () => {
     os: process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux",
     defaultServerUrl: service.getPreferences().defaultServerUrl,
     displayBackend: service.getPreferences().displayBackend,
+    overlayShortcut: service.getPreferences().overlayShortcut ?? null,
   }
 })
 
@@ -418,17 +441,230 @@ ipcMain.handle("backoffice:update:check", async () => {
 })
 
 ipcMain.handle("backoffice:update:install", async () => {
-  autoUpdater.quitAndInstall()
+  console.log("[updater] Install requested via IPC")
+  setImmediate(() => autoUpdater.quitAndInstall(false, true))
 })
+
+// --- Overlay mode ---
+
+const broadcast = (channel: string, ...args: unknown[]) => {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  mainWindow.webContents.send(channel, ...args)
+}
+
+function showWindow(source = "unknown") {
+  if (!mainWindow) return
+
+  const cursor = screen.getCursorScreenPoint()
+  const display = screen.getDisplayNearestPoint(cursor)
+  const { width: sw, height: sh } = display.workAreaSize
+  const { x: dx, y: dy } = display.workArea
+
+  if (isOverlayMode) {
+    const x = dx + Math.round((sw - OVERLAY_WIDTH) / 2)
+    const y = dy + sh - OVERLAY_HEIGHT
+    mainWindow.setBounds({ x, y, width: OVERLAY_WIDTH, height: OVERLAY_HEIGHT })
+  }
+
+  mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  mainWindow.show()
+  mainWindow.webContents.focus()
+  broadcast("backoffice:overlay:windowShown")
+}
+
+function toggleWindow(source = "unknown") {
+  if (!mainWindow) return
+  if (mainWindow.isVisible()) {
+    mainWindow.hide()
+  } else {
+    showWindow(source)
+  }
+}
+
+function applyOverlayMode(enabled: boolean) {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+
+  isOverlayMode = enabled
+
+  const cursor = screen.getCursorScreenPoint()
+  const display = screen.getDisplayNearestPoint(cursor)
+  const { width: sw, height: sh } = display.workAreaSize
+  const { x: dx, y: dy } = display.workArea
+
+  if (enabled) {
+    const x = dx + Math.round((sw - OVERLAY_WIDTH) / 2)
+    const y = dy + sh - OVERLAY_HEIGHT
+
+    mainWindow.setAlwaysOnTop(true, "screen-saver")
+    mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+    mainWindow.setSkipTaskbar(true)
+    mainWindow.setHasShadow(false)
+
+    if (IS_MAC) {
+      mainWindow.setWindowButtonVisibility(false)
+    }
+
+    mainWindow.setBounds({ x, y, width: OVERLAY_WIDTH, height: OVERLAY_HEIGHT })
+    mainWindow.setMinimumSize(400, 300)
+    mainWindow.setBackgroundColor("#00000000")
+
+    // Enable click-through for transparent areas
+    mainWindow.setIgnoreMouseEvents(true, { forward: true })
+  } else {
+    mainWindow.setAlwaysOnTop(false)
+    mainWindow.setSkipTaskbar(false)
+    mainWindow.setHasShadow(true)
+
+    if (IS_MAC) {
+      mainWindow.setWindowButtonVisibility(true)
+    }
+
+    const x = dx + Math.round((sw - NORMAL_WIDTH) / 2)
+    const y = dy + Math.round((sh - NORMAL_HEIGHT) / 2)
+    mainWindow.setBounds({ x, y, width: NORMAL_WIDTH, height: NORMAL_HEIGHT })
+    mainWindow.setMinimumSize(1080, 720)
+    mainWindow.setBackgroundColor("#f4f2ed")
+
+    mainWindow.setIgnoreMouseEvents(false)
+  }
+
+  broadcast("backoffice:overlay:modeChanged", enabled)
+}
+
+function registerOverlayShortcut(shortcut: string | null) {
+  // Unregister previous shortcut
+  if (currentOverlayShortcut) {
+    try {
+      globalShortcut.unregister(currentOverlayShortcut)
+    } catch {}
+    currentOverlayShortcut = null
+  }
+
+  if (!shortcut) return
+
+  try {
+    const success = globalShortcut.register(shortcut, () => {
+      if (isOverlayMode) {
+        toggleWindow("shortcut")
+      } else {
+        applyOverlayMode(true)
+        showWindow("shortcut")
+      }
+    })
+    if (success) {
+      currentOverlayShortcut = shortcut
+    }
+  } catch (err) {
+    console.error("Failed to register overlay shortcut:", err)
+  }
+}
+
+ipcMain.handle("backoffice:settings:overlayShortcut", async (_event: unknown, shortcut: string | null) => {
+  registerOverlayShortcut(shortcut)
+  await localService?.setPreferences({ overlayShortcut: shortcut })
+})
+
+ipcMain.handle("backoffice:overlay:set", (_event: unknown, enabled: boolean) => {
+  applyOverlayMode(enabled)
+})
+
+ipcMain.handle("backoffice:overlay:get", () => {
+  return isOverlayMode
+})
+
+ipcMain.on("backoffice:overlay:ignoreMouseEvents", (event, ignore: boolean, options?: { forward?: boolean }) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  if (win && !win.isDestroyed()) {
+    win.setIgnoreMouseEvents(ignore, options || {})
+  }
+})
+
+ipcMain.on("backoffice:overlay:startDrag", (_event, screenX: number, screenY: number) => {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  const [winX, winY] = mainWindow.getPosition()
+  dragStartPos = { x: screenX - winX, y: screenY - winY }
+})
+
+ipcMain.on("backoffice:overlay:drag", (_event, screenX: number, screenY: number) => {
+  if (!mainWindow || mainWindow.isDestroyed() || !dragStartPos) return
+  mainWindow.setPosition(screenX - dragStartPos.x, screenY - dragStartPos.y)
+})
+
+// --- Tray icon ---
+
+function createTray() {
+  try {
+    const iconPath = join(currentDir, "..", "..", "build", "icon.png")
+    const icon = nativeImage.createFromPath(iconPath)
+    if (icon.isEmpty()) return
+
+    const trayIcon = IS_MAC ? icon.resize({ width: 18, height: 18 }) : icon.resize({ width: 18, height: 18 })
+    tray = new Tray(trayIcon)
+    tray.setToolTip(APP_NAME)
+    tray.setContextMenu(
+      Menu.buildFromTemplate([
+        { label: `Show ${APP_NAME}`, click: () => showWindow("tray") },
+        { type: "separator" },
+        {
+          label: "Overlay Mode",
+          type: "checkbox",
+          checked: isOverlayMode,
+          click: (item) => applyOverlayMode(item.checked),
+        },
+        { type: "separator" },
+        { label: "Quit", click: () => app.quit() },
+      ]),
+    )
+    tray.on("click", () => toggleWindow("tray-click"))
+  } catch {}
+}
 
 app.whenReady().then(async () => {
   createMenu()
   await createWindow()
+  createTray()
+
+  // Register overlay shortcut from preferences (default: none — user must set it)
+  const savedShortcut = localService?.getPreferences().overlayShortcut
+  if (savedShortcut) {
+    registerOverlayShortcut(savedShortcut)
+  }
 
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
+  autoUpdater.logger = {
+    info: (msg: unknown) => console.log("[updater]", msg),
+    warn: (msg: unknown) => console.warn("[updater]", msg),
+    error: (msg: unknown) => console.error("[updater]", msg),
+    debug: (msg: unknown) => console.log("[updater:debug]", msg),
+  }
+
+  let updateDialogShown = false
+
+  autoUpdater.on("checking-for-update", () => {
+    console.log("[updater] Checking for update...")
+  })
+
+  autoUpdater.on("update-available", (info) => {
+    console.log("[updater] Update available:", info.version)
+  })
+
+  autoUpdater.on("update-not-available", (info) => {
+    console.log("[updater] No update available. Current:", app.getVersion(), "Latest:", info.version)
+  })
+
+  autoUpdater.on("download-progress", (progress) => {
+    console.log(`[updater] Download: ${Math.round(progress.percent)}%`)
+  })
+
+  autoUpdater.on("error", (err) => {
+    console.error("[updater] Error:", err.message)
+  })
 
   autoUpdater.on("update-downloaded", (info) => {
+    console.log("[updater] Update downloaded:", info.version)
+    if (updateDialogShown) return
+    updateDialogShown = true
     void dialog
       .showMessageBox(mainWindow, {
         type: "info",
@@ -439,12 +675,16 @@ app.whenReady().then(async () => {
       })
       .then(({ response }) => {
         if (response === 0) {
-          autoUpdater.quitAndInstall()
+          setImmediate(() => autoUpdater.quitAndInstall(false, true))
+        } else {
+          updateDialogShown = false
         }
       })
   })
 
-  void autoUpdater.checkForUpdates().catch(() => undefined)
+  void autoUpdater.checkForUpdates().catch((err) => {
+    console.error("[updater] Initial check failed:", err?.message)
+  })
 
   app.on("activate", async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -457,6 +697,11 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit()
   }
+})
+
+app.on("will-quit", () => {
+  globalShortcut.unregisterAll()
+  tray?.destroy()
 })
 
 app.on("before-quit", async () => {

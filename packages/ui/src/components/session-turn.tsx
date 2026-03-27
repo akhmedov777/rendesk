@@ -28,6 +28,11 @@ function record(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value)
 }
 
+/** Replace SDK-internal branding so the user never sees "Claude Code". */
+function sanitize(text: string): string {
+  return text.replace(/Claude\s*Code/gi, "Rendesk")
+}
+
 function unwrap(message: string) {
   const text = message.replace(/^Error:\s*/, "").trim()
 
@@ -55,26 +60,26 @@ function unwrap(message: string) {
     }
   }
 
-  if (!record(json)) return message
+  if (!record(json)) return sanitize(message)
 
   const err = record(json.error) ? json.error : undefined
   if (err) {
     const type = typeof err.type === "string" ? err.type : undefined
     const msg = typeof err.message === "string" ? err.message : undefined
-    if (type && msg) return `${type}: ${msg}`
-    if (msg) return msg
-    if (type) return type
+    if (type && msg) return sanitize(`${type}: ${msg}`)
+    if (msg) return sanitize(msg)
+    if (type) return sanitize(type)
     const code = typeof err.code === "string" ? err.code : undefined
-    if (code) return code
+    if (code) return sanitize(code)
   }
 
   const msg = typeof json.message === "string" ? json.message : undefined
-  if (msg) return msg
+  if (msg) return sanitize(msg)
 
   const reason = typeof json.error === "string" ? json.error : undefined
-  if (reason) return reason
+  if (reason) return sanitize(reason)
 
-  return message
+  return sanitize(message)
 }
 
 const hidden = new Set(["todowrite", "todoread"])

@@ -37,4 +37,6 @@ export type BackofficeBridge = {
   ): () => void
   sendPyodideResult(requestId: string, result: { success: boolean; result?: string; stdout: string; stderr: string; images: string[] }): Promise<void>
   onMenuCommand(callback: (id: string) => void): () => void
+  checkUpdate(): Promise<{ updateAvailable: boolean; version?: string }>
+  installUpdate(): Promise<void>
 }

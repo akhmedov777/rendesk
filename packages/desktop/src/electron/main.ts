@@ -1,4 +1,5 @@
 import { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, nativeTheme, shell } from "electron"
+import { autoUpdater } from "electron-updater"
 import { spawn, spawnSync } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import { dirname, join } from "node:path"
@@ -209,6 +210,26 @@ const createMenu = () => {
           click: () => sendMenuCommand("settings.open"),
         },
         {
+          label: "Check for Updates...",
+          click: () => {
+            void autoUpdater.checkForUpdates().then((result) => {
+              if (!result || !result.updateInfo) {
+                void dialog.showMessageBox(mainWindow, {
+                  type: "info",
+                  title: "Updates",
+                  message: "You are running the latest version.",
+                })
+              }
+            }).catch(() => {
+              void dialog.showMessageBox(mainWindow, {
+                type: "info",
+                title: "Updates",
+                message: "Unable to check for updates right now.",
+              })
+            })
+          },
+        },
+        {
           label: "Renvel AI Docs",
           click: () => {
             void shell.openExternal("https://renvel.ai")
@@ -384,9 +405,47 @@ ipcMain.handle("editor:state/clear", async (_event: unknown, payload: { sessionI
   await localService?.clearEditorState(payload.sessionID)
 })
 
+ipcMain.handle("backoffice:update:check", async () => {
+  try {
+    const result = await autoUpdater.checkForUpdates()
+    if (result && result.updateInfo) {
+      return { updateAvailable: true, version: result.updateInfo.version }
+    }
+    return { updateAvailable: false }
+  } catch {
+    return { updateAvailable: false }
+  }
+})
+
+ipcMain.handle("backoffice:update:install", async () => {
+  autoUpdater.quitAndInstall()
+})
+
 app.whenReady().then(async () => {
   createMenu()
   await createWindow()
+
+  autoUpdater.autoDownload = true
+  autoUpdater.autoInstallOnAppQuit = true
+
+  autoUpdater.on("update-downloaded", (info) => {
+    void dialog
+      .showMessageBox(mainWindow, {
+        type: "info",
+        title: "Update Ready",
+        message: `Version ${info.version} has been downloaded. Restart to apply the update?`,
+        buttons: ["Restart Now", "Later"],
+        defaultId: 0,
+      })
+      .then(({ response }) => {
+        if (response === 0) {
+          autoUpdater.quitAndInstall()
+        }
+      })
+  })
+
+  void autoUpdater.checkForUpdates().catch(() => undefined)
+
   app.on("activate", async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       await createWindow()

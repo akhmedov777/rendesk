@@ -46,6 +46,8 @@ const bridge: BackofficeBridge = {
       ipcRenderer.removeListener("backoffice:menu-command", handler)
     }
   },
+  checkUpdate: () => ipcRenderer.invoke("backoffice:update:check"),
+  installUpdate: () => ipcRenderer.invoke("backoffice:update:install"),
 }
 
 contextBridge.exposeInMainWorld("__BACKOFFICE__", bridge)

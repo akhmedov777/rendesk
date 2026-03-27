@@ -143,6 +143,16 @@ const createPlatform = (bootstrap: { os: DesktopOs; serviceUrl: string }): Platf
       if (!image) return null
       return dataUrlToFile(image.dataUrl, image.filename)
     },
+    async checkUpdate() {
+      try {
+        return await bridge().checkUpdate()
+      } catch {
+        return { updateAvailable: false as const }
+      }
+    },
+    async update() {
+      await bridge().installUpdate()
+    },
     activeEditorContext: () => {
       const editor = getDesktopActiveEditorState()
       if (!editor) return null
@@ -164,7 +174,7 @@ render(() => {
   const [bootstrap] = createResource(async () => {
     const value = await bridge().bootstrap()
     const runtimeFlags = {
-      updaterEnabled: false,
+      updaterEnabled: true,
       deepLinks: [],
       wsl: false,
     }

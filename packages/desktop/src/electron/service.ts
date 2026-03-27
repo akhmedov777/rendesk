@@ -286,6 +286,9 @@ type PermissionRequest = {
 const ANTHROPIC_SDK_PACKAGE = "@anthropic-ai/claude-agent-sdk"
 const CLAUDE_CODE_CLI_RELATIVE_PATH = join("node_modules", "@anthropic-ai", "claude-agent-sdk", "cli.js")
 
+/** Strip SDK-internal branding from user-visible error messages. */
+const sanitizeErrorMessage = (text: string) => text.replace(/Claude\s*Code/gi, "Rendesk")
+
 const toUnpackedAsarPath = (value: string) => value.replace(`${sep}app.asar${sep}`, `${sep}app.asar.unpacked${sep}`)
 
 const pathExists = async (value: string) => {
@@ -484,10 +487,45 @@ Communication style:
 - Be professional, concise, and action-oriented
 - Lead with solutions, not caveats
 - Confirm before making destructive file changes
-- Maintain context across the conversation`
+- Maintain context across the conversation
+
+1C:Enterprise OData Integration (Musaffo.uz / Milk House dairy factory):
+You have access to a 1C:Enterprise 8.3 database via OData REST API. Use this to answer questions about sales, purchases, inventory, production, cash, employees, counterparties, and any business data.
+
+Connection:
+- Base URL: http://82.215.79.35:19969/milkhouse/odata/standard.odata/
+- Auth: Basic HTTP (SH-AKHMEDOV:CO3ta3cy)
+- Organization: СП ООО MILK HOUSE (ИНН: 303783550)
+- Always add $format=json. Always use $top (default 100). Filter Posted eq true for documents, IsFolder eq false for catalogs, DeletionMark eq false.
+
+Query via curl with Basic auth. OData params: $filter, $select, $top, $skip, $orderby, $expand.
+Filter syntax: eq, ge, le, and, substringof('text', Field), guid'...', datetime'YYYY-MM-DDTHH:MM:SS'.
+
+Key entities:
+- Catalog_Контрагенты: clients/suppliers (Ref_Key, Code, Description, ИНН, НаименованиеПолное, Parent_Key for groups: 003=Buyers, 004=Suppliers)
+- Catalog_Номенклатура: products/materials (Ref_Key, Code, Description, Артикул, groups: D-Group=Milk, F-Group=Ingredients, P-Group=Packaging, Готовая продукция=Finished goods)
+- Catalog_Склады: warehouses
+- Catalog_Организации: our company info
+- Catalog_Сотрудники: employees
+- Catalog_КассыОрганизаций: cash registers (Головная касса UZS/EUR/RUB/USD)
+- Catalog_ДоговорыКонтрагентов: contracts (ВидДоговора: СПоставщиком/СПокупателем)
+- Document_РеализацияТоваровУслуг: sales (Number, Date, Контрагент_Key, СуммаДокумента, Склад_Key; line items: Document_РеализацияТоваровУслуг_Товары)
+- Document_ПоступлениеТоваровУслуг: purchases (same pattern; line items: _Товары)
+- Document_ВыпускПродукции / Document_НеСтандартноеПроизводство: production output
+- Document_ПриходныйКассовыйОрдер: cash receipts (ПКО)
+- Document_РасходныйКассовыйОрдер: cash expenses (РКО)
+- Document_ПлатежноеПоручение: bank payments
+- Document_СписаниеТоваров: write-offs
+- Document_НачислениеЗарплаты: salary accrual
+- AccumulationRegister_ТоварыНаСкладах: inventory movements (Номенклатура_Key, Склад_Key, Количество, RecordType: Receipt/Expense)
+- ChartOfAccounts_Хозрасчетный: chart of accounts (Uzbekistan НСБУ)
+
+Key GUIDs: Organization=bb573ed3-e8d5-11ed-9df1-b8975ae92311, Main cash (UZS)=1f6d8b6e-f93c-11ed-a1b2-f4b520313230
+
+Reference fields (_Key suffix) are GUIDs — resolve by querying the catalog. Document numbers prefixed "MS00-". Amounts in document currency (usually UZS). OData has no GROUP BY — aggregate client-side. Line items are separate entities (Document_XXX_Товары).`
 
 const ANTHROPIC_PROVIDER_ID = "anthropic"
-const DEFAULT_ANTHROPIC_MODEL_ID = "claude-sonnet-4-5-20250929"
+const DEFAULT_ANTHROPIC_MODEL_ID = "claude-sonnet-4-6"
 const AUTOMATION_SCHEDULER_TICK_MS = 30_000
 const AUTOMATION_MIN_INTERVAL_MS = 15 * 60 * 1000
 const AUTOMATION_RUN_RETENTION = 200
@@ -506,10 +544,10 @@ const ANTHROPIC_MODEL_CATALOG: AnthropicModelDefinition[] = [
     id: DEFAULT_ANTHROPIC_MODEL_ID,
     name: "Renvel Medium",
     family: "renvel-medium",
-    release_date: "2025-09-29",
+    release_date: "2025-10-15",
     limit: {
       context: 200_000,
-      output: 8_192,
+      output: 16_384,
     },
   },
   {
@@ -1629,6 +1667,7 @@ export async function createLocalService(input: {
     )
   }
 
+  const claudeCliConfigDir = join(input.userDataPath, "claude-cli")
   const legacyProviderAuthPath = join(input.userDataPath, "provider-auth.json")
   await fs.rm(legacyProviderAuthPath, { force: true }).catch(() => undefined)
 
@@ -2155,9 +2194,13 @@ export async function createLocalService(input: {
 
     const sdk = await import("@anthropic-ai/claude-agent-sdk")
     const pathToClaudeCodeExecutable = await resolveClaudeCodeExecutablePath()
+    const claudeConfigDir = claudeCliConfigDir
     const claudeRuntimeEnv = {
       ...process.env,
       ANTHROPIC_API_KEY: anthropicCredential.key,
+      CLAUDE_CONFIG_DIR: claudeConfigDir,
+      ANTHROPIC_AUTH_TOKEN: "",
+      CLAUDE_CODE_OAUTH_TOKEN: "",
     }
     const spawnClaudeCodeProcess: AgentOptions["spawnClaudeCodeProcess"] = ({ args, cwd, env, signal }) => {
       const { CLAUDECODE: _drop, ...cleanEnv } = env as Record<string, string | undefined>
@@ -2372,7 +2415,7 @@ Automation execution mode:
     }
 
     if (result?.subtype !== "success") {
-      const errorMessage = result?.errors?.join("\n") || "Automation execution failed"
+      const errorMessage = sanitizeErrorMessage(result?.errors?.join("\n") || "Automation execution failed")
       return {
         status: "failed" as const,
         output,
@@ -2846,9 +2889,13 @@ Automation execution mode:
 
     const sdk = await import("@anthropic-ai/claude-agent-sdk")
     const pathToClaudeCodeExecutable = await resolveClaudeCodeExecutablePath()
+    const claudeConfigDir = claudeCliConfigDir
     const claudeRuntimeEnv = {
       ...process.env,
       ANTHROPIC_API_KEY: anthropicCredential.key,
+      CLAUDE_CONFIG_DIR: claudeConfigDir,
+      ANTHROPIC_AUTH_TOKEN: "",
+      CLAUDE_CODE_OAUTH_TOKEN: "",
     }
     const spawnClaudeCodeProcess: AgentOptions["spawnClaudeCodeProcess"] = ({ args, cwd, env, signal }) => {
       const { CLAUDECODE: _drop, ...cleanEnv } = env as Record<string, string | undefined>
@@ -3303,7 +3350,7 @@ Automation execution mode:
           assistant.error = {
             name: result.subtype,
             data: {
-              message: result.errors.join("\n") || "Renvel AI agent execution failed.",
+              message: sanitizeErrorMessage(result.errors.join("\n")) || "Renvel AI agent execution failed.",
             },
           }
         }
@@ -3337,7 +3384,8 @@ Automation execution mode:
       emit(input.directory, { type: "message.updated", properties: { info: input.userMessage } })
       emit(input.directory, { type: "session.updated", properties: { info: input.session } })
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error)
+      const rawMessage = error instanceof Error ? error.message : String(error)
+      const errorMessage = sanitizeErrorMessage(rawMessage)
       assistant.time.completed = now()
 
       // Clear session ID on crash — the session is broken and shouldn't be resumed.

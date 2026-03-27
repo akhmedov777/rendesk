@@ -133,6 +133,15 @@
     width: min(calc(100vw - 32px), 960px);
     height: min(calc(100vh - 32px), 600px);
   }
+
+  &[data-size="form"] [data-slot="dialog-container"] {
+    width: min(calc(100vw - 32px), 760px);
+    height: min(calc(100vh - 32px), 820px);
+
+    [data-slot="dialog-content"] {
+      overflow: hidden;
+    }
+  }
 }
 
 [data-component="dialog"][data-transition] [data-slot="dialog-content"] {

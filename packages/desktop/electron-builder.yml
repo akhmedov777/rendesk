@@ -1,5 +1,9 @@
 appId: app.rendesk.desktop
 productName: Rendesk
+publish:
+  provider: github
+  owner: akhmedov777
+  repo: rendesk
 directories:
   buildResources: build
   output: release
@@ -29,7 +33,7 @@ dmg:
   title: Rendesk
   background: build/dmg-background.png
   icon: build/icon.icns
-  iconSize: 112
+  iconSize: 128
   writeUpdateInfo: false
   window:
     width: 680

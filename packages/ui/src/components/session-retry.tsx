@@ -28,11 +28,12 @@ export function SessionRetry(props: { status: SessionStatus; show?: boolean }) {
   const message = createMemo(() => {
     const current = retry()
     if (!current) return ""
-    if (current.message.includes("exceeded your current quota") && current.message.includes("gemini")) {
+    const sanitized = current.message.replace(/Claude\s*Code/gi, "Rendesk")
+    if (sanitized.includes("exceeded your current quota") && sanitized.includes("gemini")) {
       return i18n.t("ui.sessionTurn.retry.geminiHot")
     }
-    if (current.message.length > 80) return current.message.slice(0, 80) + "..."
-    return current.message
+    if (sanitized.length > 80) return sanitized.slice(0, 80) + "..."
+    return sanitized
   })
   const truncated = createMemo(() => {
     const current = retry()

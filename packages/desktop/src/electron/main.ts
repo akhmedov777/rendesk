@@ -632,6 +632,7 @@ app.whenReady().then(async () => {
 
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
+  autoUpdater.allowPrerelease = true
   autoUpdater.logger = {
     info: (msg: unknown) => console.log("[updater]", msg),
     warn: (msg: unknown) => console.warn("[updater]", msg),

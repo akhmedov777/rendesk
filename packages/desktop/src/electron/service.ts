@@ -405,6 +405,7 @@ type PersistedState = {
   preferences: {
     defaultServerUrl: string | null
     displayBackend: "auto" | "wayland" | null
+    overlayShortcut: string | null
   }
   integrations: {
     editor: { enabled: boolean }
@@ -625,6 +626,7 @@ const defaultState = (): PersistedState => ({
   preferences: {
     defaultServerUrl: null,
     displayBackend: null,
+    overlayShortcut: null,
   },
   integrations: {
     editor: { enabled: true },
@@ -2194,16 +2196,21 @@ export async function createLocalService(input: {
 
     const sdk = await import("@anthropic-ai/claude-agent-sdk")
     const pathToClaudeCodeExecutable = await resolveClaudeCodeExecutablePath()
-    const claudeConfigDir = claudeCliConfigDir
-    const claudeRuntimeEnv = {
+    const claudeRuntimeEnv: Record<string, string | undefined> = {
       ...process.env,
       ANTHROPIC_API_KEY: anthropicCredential.key,
-      CLAUDE_CONFIG_DIR: claudeConfigDir,
-      ANTHROPIC_AUTH_TOKEN: "",
-      CLAUDE_CODE_OAUTH_TOKEN: "",
+      CLAUDE_CONFIG_DIR: claudeCliConfigDir,
     }
+    delete claudeRuntimeEnv.ANTHROPIC_AUTH_TOKEN
+    delete claudeRuntimeEnv.CLAUDE_CODE_OAUTH_TOKEN
+    delete claudeRuntimeEnv.CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR
+    delete claudeRuntimeEnv.CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR
     const spawnClaudeCodeProcess: AgentOptions["spawnClaudeCodeProcess"] = ({ args, cwd, env, signal }) => {
       const { CLAUDECODE: _drop, ...cleanEnv } = env as Record<string, string | undefined>
+      console.log("[rendesk:sdk] Spawning CLI:", process.execPath, args.slice(0, 3).join(" "), "...")
+      console.log("[rendesk:sdk] ANTHROPIC_API_KEY present:", !!(cleanEnv as Record<string, string | undefined>).ANTHROPIC_API_KEY)
+      console.log("[rendesk:sdk] ANTHROPIC_AUTH_TOKEN present:", !!(cleanEnv as Record<string, string | undefined>).ANTHROPIC_AUTH_TOKEN)
+      console.log("[rendesk:sdk] CLAUDE_CONFIG_DIR:", (cleanEnv as Record<string, string | undefined>).CLAUDE_CONFIG_DIR)
       const child = spawn(process.execPath, args, {
         cwd,
         env: {
@@ -2211,8 +2218,11 @@ export async function createLocalService(input: {
           ELECTRON_RUN_AS_NODE: "1",
         },
         signal,
-        stdio: ["pipe", "pipe", "ignore"],
+        stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true,
+      })
+      child.stderr?.on("data", (chunk: Buffer) => {
+        console.error("[rendesk:sdk:stderr]", chunk.toString())
       })
 
       return {
@@ -2889,16 +2899,21 @@ Automation execution mode:
 
     const sdk = await import("@anthropic-ai/claude-agent-sdk")
     const pathToClaudeCodeExecutable = await resolveClaudeCodeExecutablePath()
-    const claudeConfigDir = claudeCliConfigDir
-    const claudeRuntimeEnv = {
+    const claudeRuntimeEnv: Record<string, string | undefined> = {
       ...process.env,
       ANTHROPIC_API_KEY: anthropicCredential.key,
-      CLAUDE_CONFIG_DIR: claudeConfigDir,
-      ANTHROPIC_AUTH_TOKEN: "",
-      CLAUDE_CODE_OAUTH_TOKEN: "",
+      CLAUDE_CONFIG_DIR: claudeCliConfigDir,
     }
+    delete claudeRuntimeEnv.ANTHROPIC_AUTH_TOKEN
+    delete claudeRuntimeEnv.CLAUDE_CODE_OAUTH_TOKEN
+    delete claudeRuntimeEnv.CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR
+    delete claudeRuntimeEnv.CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR
     const spawnClaudeCodeProcess: AgentOptions["spawnClaudeCodeProcess"] = ({ args, cwd, env, signal }) => {
       const { CLAUDECODE: _drop, ...cleanEnv } = env as Record<string, string | undefined>
+      console.log("[rendesk:sdk] Spawning CLI:", process.execPath, args.slice(0, 3).join(" "), "...")
+      console.log("[rendesk:sdk] ANTHROPIC_API_KEY present:", !!(cleanEnv as Record<string, string | undefined>).ANTHROPIC_API_KEY)
+      console.log("[rendesk:sdk] ANTHROPIC_AUTH_TOKEN present:", !!(cleanEnv as Record<string, string | undefined>).ANTHROPIC_AUTH_TOKEN)
+      console.log("[rendesk:sdk] CLAUDE_CONFIG_DIR:", (cleanEnv as Record<string, string | undefined>).CLAUDE_CONFIG_DIR)
       const child = spawn(process.execPath, args, {
         cwd,
         env: {
@@ -2906,8 +2921,11 @@ Automation execution mode:
           ELECTRON_RUN_AS_NODE: "1",
         },
         signal,
-        stdio: ["pipe", "pipe", "ignore"],
+        stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true,
+      })
+      child.stderr?.on("data", (chunk: Buffer) => {
+        console.error("[rendesk:sdk:stderr]", chunk.toString())
       })
 
       return {
